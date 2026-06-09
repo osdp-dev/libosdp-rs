@@ -7,7 +7,7 @@ use anyhow::bail;
 use anyhow::Context;
 use configparser::ini::Ini;
 use libosdp::{ControlPanelBuilder, OsdpFlag, PdCapability, PdId, PdInfoBuilder};
-use rand::Rng;
+use rand::RngExt;
 use std::{
     fmt::Write,
     path::{Path, PathBuf},
