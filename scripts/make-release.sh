@@ -27,6 +27,24 @@ function cargo_set_version() {
 	}' -- -ver=$ver $dir/Cargo.toml
 }
 
+function cargo_get_version() {
+	dir=$1
+	perl -ne 'print $1 if (/^version = "(.+)"$/)' $dir/Cargo.toml
+}
+
+# Pin a dependency to an exact version (=x.y.z) in a crate's Cargo.toml.
+# libosdp and libosdp-sys are released in lockstep and libosdp-sys ships
+# breaking changes in minor bumps, so libosdp must never float across them.
+function cargo_pin_dep() {
+	dir=$1
+	dep=$2
+	ver=$3
+	perl -pi -se '
+	if (/^\Q$dep\E = "=?\d+\.\d+\.\d+"$/) {
+		$_="$dep = \"=$ver\"\n"
+	}' -- -dep="$dep" -ver="$ver" $dir/Cargo.toml
+}
+
 function cargo_inc_version() {
 	dir=$1
 	inc=$2
@@ -75,10 +93,16 @@ function do_libosdp_sys_bump() {
 	commit_release libosdp-sys
 }
 
+function do_libosdp_release() {
+	inc=$1
+	cargo_pin_dep libosdp libosdp-sys "$(cargo_get_version libosdp-sys)"
+	do_cargo_release "libosdp" $inc
+}
+
 function do_release() {
 	case $1 in
 	libosdp-sys) do_libosdp_sys_bump ;;
-	libosdp) do_cargo_release "libosdp" $2 ;;
+	libosdp) do_libosdp_release $2 ;;
 	osdpctl) do_cargo_release "osdpctl" $2 ;;
 	esac
 }
