@@ -187,6 +187,14 @@ fn main() -> Result<()> {
     if short_enums {
         build.flag("-fshort-enums");
     }
+    if build.get_compiler().is_like_msvc() {
+        // Mirror vendor/CMakeLists.txt: MSVC's legacy preprocessor mis-handles
+        // the token-paste + rescan in IS_ENABLED() (utils/include/utils/utils.h),
+        // silently returning 0 for defined-as-1 flags. /Zc:preprocessor selects
+        // the conformant preprocessor and /std:c11 makes _Static_assert (used by
+        // the IS_ENABLED self-test in utils.c) a recognised keyword.
+        build.flag("/Zc:preprocessor").flag("/std:c11");
+    }
     build.compile("libosdp.a");
 
     /* regenerate bindings only when requested by maintainer */
