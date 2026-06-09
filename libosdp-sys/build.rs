@@ -204,6 +204,12 @@ fn main() -> Result<()> {
             .use_core()
             .layout_tests(layout_tests)
             .header("vendor/include/osdp.h")
+            // Only emit the libosdp API surface. Without this, bindgen also
+            // emits every macro it parses transitively from <stdint.h> etc.,
+            // dragging in host-glibc-specific constants (__GLIBC_MINOR__,
+            // __GLIBC_USE_ISOC23, ...) that make the checked-in bindings
+            // non-reproducible across build hosts.
+            .allowlist_file(r".*osdp\.h")
             .clang_args(args)
             .generate()
             .context("Unable to generate bindings")?;
