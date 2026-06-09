@@ -9,7 +9,7 @@ type Result<T> = core::result::Result<T, libosdp::OsdpError>;
 
 use core::time::Duration;
 use libosdp::{OsdpCommand, OsdpCommandFileTx, OsdpError, OsdpFileOps};
-use rand::Rng;
+use rand::RngExt;
 use std::{
     cmp,
     collections::HashMap,
