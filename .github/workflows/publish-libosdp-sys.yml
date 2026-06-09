@@ -21,10 +21,10 @@ jobs:
       CCACHE_DISABLE: "1"
       LIBOSDP_SYS_REGENERATE_BINDINGS: "1"
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: recursive
-    - uses: actions-rust-lang/setup-rust-toolchain@v1.9.0
+    - uses: actions-rust-lang/setup-rust-toolchain@v1.16.1
       with:
         toolchain: stable
     - name: Regenerate bindings
@@ -40,10 +40,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-15-intel, macos-latest, windows-latest]
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: recursive
-    - uses: actions-rust-lang/setup-rust-toolchain@v1.9.0
+    - uses: actions-rust-lang/setup-rust-toolchain@v1.16.1
       with:
         toolchain: stable
     - run: cargo build -p libosdp-sys
@@ -53,10 +53,10 @@ jobs:
     needs: [bindings_match, cross_platform_check]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: recursive
-    - uses: actions-rust-lang/setup-rust-toolchain@v1.9.0
+    - uses: actions-rust-lang/setup-rust-toolchain@v1.16.1
       with:
         toolchain: stable
     - name: Check semver
