@@ -1,0 +1,31 @@
+# Dependabot configuration for all supported ecosystems in this repo.
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates
+version: 2
+updates:
+  # Rust crates. One entry at the workspace root covers every member
+  # (libosdp, libosdp-sys, osdpctl) via the shared Cargo.lock.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    reviewers:
+      - sidcha
+    groups:
+      # Patch/minor bumps land in a single PR to cut review noise; major
+      # bumps stay separate so breaking changes get individual attention.
+      cargo:
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions used across .github/workflows/*.yml
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    reviewers:
+      - sidcha
+    groups:
+      actions:
+        patterns:
+          - "*"
