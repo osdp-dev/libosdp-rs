@@ -7,8 +7,8 @@
 //! # LibOSDP - Open Supervised Device Protocol Library
 //!
 //! This is a cross-platform open source implementation of IEC 60839-11-5 Open Supervised Device
-//! Protocol (OSDP). The protocol is intended to improve interoperability among access control and
-//! security products. It supports Secure Channel (SC) for encrypted and authenticated
+//! Protocol (OSDP). The protocol is intended to improve [interoperability][5] among access control
+//! and security products. It supports [Secure Channel (SC)][6] for encrypted and authenticated
 //! communication between configured devices.
 //!
 //! OSDP describes the communication protocol for interfacing one or more Peripheral Devices (PD)
@@ -56,6 +56,8 @@
 //! [2]: https://www.securityindustry.org/industry-standards/open-supervised-device-protocol/
 //! [3]: https://docs.rs/crate/libosdp/latest/source/examples/cp.rs
 //! [4]: https://docs.rs/crate/libosdp/latest/source/examples/pd.rs
+//! [5]: https://doc.osdp.dev/libosdp/compatibility
+//! [6]: https://doc.osdp.dev/libosdp/secure-channel
 
 #![warn(missing_debug_implementations)]
 #![warn(rust_2018_idioms)]

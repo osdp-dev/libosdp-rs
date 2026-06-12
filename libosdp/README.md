@@ -10,7 +10,7 @@ The documentation for this crate can be found [here][5].
 ## Features
 
   - Production ready implementation with active users and contributors
-  - Supports secure channel communication (AES-128)
+  - Supports secure channel communication (AES-128) ([see][6])
   - Can be used to setup a PD or CP mode of operation
   - Most OSDP specified commands and replies are supported (see [doc][3])
 
@@ -58,8 +58,9 @@ loop {
 
 See [examples][2] for a working implementation.
 
-[1]: https://github.cobm/goToMain/liosdp
+[1]: https://github.com/goToMain/libosdp
 [2]: https://github.com/goToMain/libosdp-rs/tree/master/libosdp/examples
 [3]: https://doc.osdp.dev/protocol/commands-and-replies
 [4]: https://doc.osdp.dev/
 [5]: https://docs.rs/libosdp
+[6]: https://doc.osdp.dev/libosdp/secure-channel
