@@ -58,8 +58,8 @@ loop {
 
 See [examples][2] for a working implementation.
 
-[1]: https://github.com/goToMain/libosdp
-[2]: https://github.com/goToMain/libosdp-rs/tree/master/libosdp/examples
+[1]: https://github.com/osdp-dev/libosdp
+[2]: https://github.com/osdp-dev/libosdp-rs/tree/master/libosdp/examples
 [3]: https://doc.osdp.dev/protocol/commands-and-replies
 [4]: https://doc.osdp.dev/
 [5]: https://docs.rs/libosdp

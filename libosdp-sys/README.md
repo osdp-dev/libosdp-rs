@@ -1,6 +1,6 @@
 # libosdp-sys
 
-This crate hosts bindgen generated `-sys` bindings to [goToMain/libosdp][1]. It
+This crate hosts bindgen generated `-sys` bindings to [osdp-dev/libosdp][1]. It
 tracks LibOSDP releases and uses the same version numbers to make it easy to
 determine the underlying LibOSDP version.
 
@@ -18,6 +18,6 @@ updated file in the same commit:
 CCACHE_DISABLE=1 LIBOSDP_SYS_REGENERATE_BINDINGS=1 cargo build -p libosdp-sys
 ```
 
-[1]: https://github.com/goToMain/libosdp
+[1]: https://github.com/osdp-dev/libosdp
 [2]: https://crates.io/crates/libosdp
 [3]: https://docs.rs/libosdp

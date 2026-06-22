@@ -1,4 +1,4 @@
 [submodule "vendor"]
 	path = libosdp-sys/vendor
-  url = https://github.com/goToMain/libosdp
+  url = https://github.com/osdp-dev/libosdp
   branch = master
