@@ -14,8 +14,27 @@ on:
     - 'libosdp-v*'
 
 jobs:
+  release_gate:
+    name: Verify release metadata
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: recursive
+    - name: Check libosdp release metadata
+      env:
+        REF_TYPE: ${{ github.ref_type }}
+        REF_NAME: ${{ github.ref_name }}
+      run: |
+        args=(-c libosdp -r)
+        if [ "$REF_TYPE" = "tag" ]; then
+          args+=(-t "$REF_NAME")
+        fi
+        bash scripts/check-release.sh "${args[@]}"
+
   cross_platform_check:
     name: Build crate on ${{ matrix.os }}
+    needs: [release_gate]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -33,7 +52,7 @@ jobs:
 
   publish:
     name: Publish Crate
-    needs: [cross_platform_check]
+    needs: [release_gate, cross_platform_check]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
