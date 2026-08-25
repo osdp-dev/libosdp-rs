@@ -120,3 +120,34 @@ jobs:
         cargo publish -p libosdp-sys
       env:
         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  github_release:
+    name: Create GitHub release
+    # Only after the crate is actually on crates.io: a release announcing a
+    # version that failed to publish would point at nothing installable.
+    needs: [publish]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v7
+    - name: Render release notes from the changelog
+      id: notes
+      env:
+        REF_NAME: ${{ github.ref_name }}
+      run: |
+        set -euo pipefail
+        python3 scripts/changelog_tool.py notes \
+          --file "changelog/${REF_NAME}.md" --output RELEASE.txt
+        test -s RELEASE.txt
+        # Releases are titled "<crate> v<version>" rather than the raw tag, so
+        # the crate reads as a name and not as part of a hyphenated string.
+        echo "title=${REF_NAME%-v*} ${REF_NAME##*-}" >> "$GITHUB_OUTPUT"
+    - name: Create GitHub release
+      uses: softprops/action-gh-release@v3
+      with:
+        name: ${{ steps.notes.outputs.title }}
+        body_path: RELEASE.txt
+        draft: false
+        prerelease: false
