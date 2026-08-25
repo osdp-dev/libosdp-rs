@@ -10,7 +10,9 @@ usage() {
 	LibOSDP release helper
 
 	OPTIONS:
-	  -c, --component	Compoenent to release (can be one of libosdp, libosdp-sys, osdpctl)
+	  -c, --component	Component to release (one of libosdp, libosdp-sys, osdpctl)
+	  -v, --version		libosdp-sys only: vendor this libosdp tag (default: newest
+				                        on the branch the vendor submodule tracks)
 	  --patch		Release version bump type: patch (default)
 	  --major		Release version bump type: major
 	  --minor		Release version bump type: minor
@@ -60,8 +62,15 @@ function cargo_inc_version() {
 
 function commit_release() {
 	crate=$1
-	version=$(perl -ne 'print $1 if (/^version = "(.+)"$/)' $crate/Cargo.toml)
-	git add $crate/Cargo.toml &&
+	version=$(cargo_get_version $crate)
+	# Refuse to tag anything the release gate would reject in CI. Catching it
+	# here costs a rerun; catching it after publish costs a burnt version,
+	# because crates.io has no unpublish.
+	if [[ "$crate" != "osdpctl" ]]; then
+		bash $(dirname ${BASH_SOURCE[0]})/check-release.sh \
+			-c $crate -t "$crate-v$version" || return 1
+	fi
+	git add $crate/Cargo.toml Cargo.lock &&
 	git commit -s -m "$crate: Release v$version" &&
 	git tag "$crate-v$version" -s -a -m "Release $version"
 }
@@ -73,23 +82,43 @@ function do_cargo_release() {
 	commit_release $crate
 }
 
+# The branch the vendor submodule follows, so that a release branch steps
+# along its own line instead of picking up tags from master.
+function vendor_branch() {
+	git config -f .gitmodules submodule.vendor.branch || echo master
+}
+
+function vendor_newest_tag() {
+	branch=$(vendor_branch)
+	git -C libosdp-sys/vendor fetch -q --tags origin $branch
+	git -C libosdp-sys/vendor tag --list 'v*' --sort=-v:refname \
+		--merged FETCH_HEAD | head -1
+}
+
 function do_libosdp_sys_bump() {
-	latest_release=$(curl -s https://api.github.com/repos/gotoMain/libosdp/releases/latest | grep 'tag_name' | perl -pe 's|\s+"tag_name": "(.+)",|$1|')
-	version=$(perl -ne 'print $1 if (/^version = "(.+)"$/)' libosdp-sys/Cargo.toml)
-	if [[ "${latest_release}" == "v${version}" ]]; then
-		echo "Nothing to be done"
+	target=$1
+	[[ -z "$target" ]] && target=$(vendor_newest_tag)
+	version=${target#"v"}
+	current=$(cargo_get_version libosdp-sys)
+	if [[ "$current" == "$version" ]]; then
+		echo "libosdp-sys is already at $version, nothing to be done"
 		return
 	fi
-	pushd libosdp-sys/vendor
-	git fetch origin
-	git checkout ${latest_release}
-	git submodule update --recursive
-	popd
+	# Releases on one line are not reachable from another, so resolving the
+	# newest tag can land behind the current version if the vendor submodule
+	# tracks the wrong branch. Never walk a published crate backwards.
+	if [[ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" != "$version" ]]; then
+		echo "Refusing to move libosdp-sys $current back to $version" >&2
+		echo "Check 'submodule.vendor.branch' in .gitmodules" >&2
+		return 1
+	fi
+	git -C libosdp-sys/vendor fetch -q --tags origin
+	git -C libosdp-sys/vendor checkout -q $target || return 1
+	git -C libosdp-sys/vendor submodule update --init --recursive
 	cargo clean -p libosdp-sys
 	CCACHE_DISABLE=1 LIBOSDP_SYS_REGENERATE_BINDINGS=1 cargo build -p libosdp-sys
-	git add libosdp-sys/vendor
-	git add libosdp-sys/src/bindings.rs
-	cargo_set_version libosdp-sys ${latest_release#"v"}
+	cargo_set_version libosdp-sys $version
+	git add libosdp-sys/vendor libosdp-sys/src/bindings.rs
 	commit_release libosdp-sys
 }
 
@@ -101,17 +130,20 @@ function do_libosdp_release() {
 
 function do_release() {
 	case $1 in
-	libosdp-sys) do_libosdp_sys_bump ;;
+	libosdp-sys) do_libosdp_sys_bump "$3" ;;
 	libosdp) do_libosdp_release $2 ;;
 	osdpctl) do_cargo_release "osdpctl" $2 ;;
+	*) echo -e "Must pass -c with a known component\n"; usage; exit 1;;
 	esac
 }
 
 INC="patch"
-COMPONENT="libosdp"
+CRATE=""
+VERSION=""
 while [ $# -gt 0 ]; do
 	case $1 in
-	-c|--create)		CRATE=$2; shift;;
+	-c|--component)		CRATE=$2; shift;;
+	-v|--version)		VERSION=$2; shift;;
 	--patch)		INC="patch";;
 	--major)		INC="major";;
 	--minor)		INC="minor";;
@@ -121,4 +153,4 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
-do_release $CRATE $INC
+do_release "$CRATE" "$INC" "$VERSION"
