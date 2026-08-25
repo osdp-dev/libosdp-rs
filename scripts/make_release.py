@@ -74,6 +74,11 @@ RELEASE_KEY = "D8861B9C6B9C4284D980D6016804DFEE281234B2"
 
 MARKER = "dev"  # the only pre-release marker value
 
+# publish sets this to the tag it is committing. The pre-commit gate refuses a
+# release-shaped index without it, so a stray commit or --amend cannot absorb a
+# release that publish staged and then rolled back.
+RELEASE_ENV = "LIBOSDP_RS_RELEASE"
+
 CRATES = changelog_tool.CRATES
 
 VENDOR = "libosdp-sys/vendor"
@@ -130,9 +135,10 @@ def parse_version(raw: str) -> Version:
 
 
 def git(args: list[str], root: Path, check: bool = True,
-        strip: bool = True) -> str:
+        strip: bool = True, env: dict[str, str] | None = None) -> str:
     result = subprocess.run(
-        ["git", *args], cwd=root, capture_output=True, text=True
+        ["git", *args], cwd=root, capture_output=True, text=True,
+        env={**os.environ, **env} if env else None,
     )
     if check and result.returncode != 0:
         die(f"git {' '.join(args)} failed: {result.stderr.strip()}")
@@ -707,7 +713,8 @@ def cmd_publish(root: Path, args: argparse.Namespace) -> None:
     if crate == "libosdp":
         staged.append(manifest("libosdp"))
     git(["add", *dict.fromkeys(staged)], root)
-    git(["commit", "-s", "-m", f"Release {tag}"], root)
+    git(["commit", "-s", "-m", f"Release {tag}"], root,
+        env={RELEASE_ENV: tag})
 
     def rollback(reason: str) -> None:
         git(["tag", "-d", tag], root, check=False)
@@ -796,8 +803,24 @@ def cmd_check_staged(root: Path) -> None:
     def index_text(path: str) -> str:
         return git(["show", f":{path}"], root)
 
+    staged_releases = set(release_files)
     for crate, path in touched.items():
-        parse_manifest_version(path, index_text(path))
+        version = parse_manifest_version(path, index_text(path))
+        # A finalized version bump paired with that version's changelog is a
+        # release commit, and only publish may make one. A --cycle Prepare
+        # commit carries the -dev marker, so it is deliberately not caught.
+        tag = f"{crate}-v{version}"
+        if version.prerelease or f"{CHANGELOG_DIR}/{tag}.md" not in staged_releases:
+            continue
+        if os.environ.get(RELEASE_ENV) != tag:
+            die(f"pre-commit: this commit would fold the {tag} release into "
+                f"itself.\n"
+                f"  {path} bumps to {version} and {CHANGELOG_DIR}/{tag}.md is "
+                f"staged.\n"
+                f"  Release commits are made by 'make_release.py publish'. If "
+                f"you meant to\n"
+                f"  commit something else, unstage the release first:\n"
+                f"    git restore --staged {path} {CHANGELOG_DIR}/{tag}.md")
     if manifests["libosdp"] in staged:
         pin = SYS_DEP_RE.search(index_text(manifests["libosdp"]))
         if pin and not pin.group(1).startswith("="):
