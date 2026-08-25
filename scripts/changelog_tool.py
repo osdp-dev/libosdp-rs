@@ -321,19 +321,20 @@ def command_validate(args: argparse.Namespace) -> None:
 
 def command_notes(args: argparse.Namespace) -> None:
     if args.stdin:
-        entry = parse_markdown_release(sys.stdin.read())
+        text = sys.stdin.read()
     elif args.file:
-        entry = validate_release_file(pathlib.Path(args.file), quiet=True)
+        path = pathlib.Path(args.file)
+        validate_release_file(path, quiet=True)
+        text = path.read_text(encoding="utf-8")
     else:
         die("A release file path is required")
 
-    lines = [entry.subject.strip(), ""]
-    for title, items in entry.sections:
-        lines.append(f"## {title}")
-        lines.append("")
-        lines.extend(f"- {item}" for item in items)
-        lines.append("")
-    content = "\n".join(lines).rstrip() + "\n"
+    # Emit the body exactly as written, front matter aside. Re-rendering from
+    # the parsed entry would join wrapped bullets onto one line, so a release
+    # published from here would not match the file it came from.
+    if args.stdin:
+        parse_markdown_release(text)
+    content = split_front_matter(text)[1].rstrip() + "\n"
 
     if args.output:
         pathlib.Path(args.output).write_text(content, encoding="utf-8")
