@@ -8,9 +8,9 @@ name: Build CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, 'release_v*' ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, 'release_v*' ]
 
 jobs:
   lint:
