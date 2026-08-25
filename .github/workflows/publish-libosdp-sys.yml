@@ -20,17 +20,22 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
+        fetch-depth: 0
         submodules: recursive
     - name: Check libosdp-sys release metadata
+      shell: bash
       env:
         REF_TYPE: ${{ github.ref_type }}
         REF_NAME: ${{ github.ref_name }}
       run: |
-        args=(-c libosdp-sys)
-        if [ "$REF_TYPE" = "tag" ]; then
-          args+=(-t "$REF_NAME")
+        set -euo pipefail
+        if [ "$REF_TYPE" != "tag" ]; then
+          echo "Not a tag ref; validating the changelog directory only"
+          python3 scripts/make_release.py check-changelog
+          exit 0
         fi
-        bash scripts/check-release.sh "${args[@]}"
+        python3 scripts/make_release.py check-release \
+          -c libosdp-sys --tag "$REF_NAME" --registry
 
   bindings_match:
     name: Verify checked-in bindings

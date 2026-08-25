@@ -13,6 +13,15 @@ on:
     branches: [ master, 'release_v*' ]
 
 jobs:
+  changelog:
+    name: Validate release changelogs
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+      - name: Validate every published release file
+        run: python3 scripts/make_release.py check-changelog
+
   lint:
     runs-on: ubuntu-latest
     steps:
