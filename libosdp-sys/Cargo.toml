@@ -1,6 +1,6 @@
 [package]
 name = "libosdp-sys"
-version = "3.2.6"
+version = "3.2.7"
 edition = "2021"
 authors = ["Siddharth Chandrasekaran <sidcha.dev@gmail.com>"]
 description = "Sys crate for https://github.com/osdp-dev/libosdp"
