@@ -42,6 +42,41 @@ class TestSysTargetFromRef(unittest.TestCase):
         self.assertEqual(mr.sys_target_from_ref(" v3.2.7 "), mr.Version(3, 2, 7))
 
 
+class TestPinUpkeep(unittest.TestCase):
+    """libosdp's '=' pin has to survive a sys-side move mid-cycle."""
+
+    @staticmethod
+    def _workspace(tmp: str, sys_version: str, libosdp_version: str,
+                   pin: str) -> Path:
+        root = Path(tmp)
+        (root / "libosdp-sys").mkdir()
+        (root / "libosdp-sys" / "Cargo.toml").write_text(
+            f'[package]\nname = "libosdp-sys"\nversion = "{sys_version}"\n')
+        (root / "libosdp").mkdir()
+        (root / "libosdp" / "Cargo.toml").write_text(
+            f'[package]\nname = "libosdp"\nversion = "{libosdp_version}"\n'
+            f'\n[dependencies]\nlibosdp-sys = "{pin}"\n')
+        return root
+
+    def test_write_pin_round_trips_a_prerelease(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._workspace(tmp, "4.0.0-dev", "1.0.0-dev", "=3.2.7")
+            mr.write_pin(root, mr.Version(4, 0, 0, prerelease=True))
+            self.assertEqual(mr.read_pin(root), "=4.0.0-dev")
+
+    def test_pin_is_refreshed_while_libosdp_is_mid_cycle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._workspace(tmp, "4.0.0-dev", "1.0.0-dev", "=3.2.7")
+            self.assertTrue(mr.refresh_pin_if_mid_cycle(root))
+            self.assertEqual(mr.read_pin(root), "=4.0.0-dev")
+
+    def test_pin_is_left_alone_when_libosdp_is_released(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._workspace(tmp, "3.2.7", "0.2.2", "=3.2.7")
+            self.assertFalse(mr.refresh_pin_if_mid_cycle(root))
+            self.assertEqual(mr.read_pin(root), "=3.2.7")
+
+
 def _git(args: list[str], cwd: Path) -> str:
     return subprocess.run(["git", *args], cwd=cwd, check=True,
                           capture_output=True, text=True).stdout.strip()

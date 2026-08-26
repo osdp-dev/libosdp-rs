@@ -249,6 +249,19 @@ def write_pin(root: Path, version: Version) -> None:
     path.write_text(text)
 
 
+def refresh_pin_if_mid_cycle(root: Path) -> bool:
+    """Re-point libosdp at the libosdp-sys version the workspace now builds.
+
+    write_pin otherwise runs only during a libosdp prepare, so a sys-side
+    vendor move would leave a stale '=' pin -- hidden locally by
+    [patch.crates-io] and caught only at publish. Returns whether it wrote.
+    """
+    if not read_state(root, "libosdp").prerelease:
+        return False
+    write_pin(root, read_state(root, "libosdp-sys"))
+    return True
+
+
 # ---------------------------------------------------------------------------
 # vendored C library (libosdp-sys only)
 # ---------------------------------------------------------------------------
@@ -690,11 +703,14 @@ def cmd_prepare(root: Path, args: argparse.Namespace) -> None:
     write_state(root, crate, nxt)
     if crate == "libosdp":
         write_pin(root, read_state(root, "libosdp-sys"))
+        staged_pin = True
+    else:
+        staged_pin = refresh_pin_if_mid_cycle(root)
     refresh_lockfile(root)
     scaffold_changelog(root, tag, hints)
 
     staged = version_files(crate) + [str(path.relative_to(root))]
-    if crate == "libosdp":
+    if staged_pin:
         staged.append(manifest("libosdp"))
     git(["add", *dict.fromkeys(staged)], root)
 
@@ -730,6 +746,8 @@ def cmd_vendor(root: Path, args: argparse.Namespace) -> None:
     refresh_lockfile(root)
     vendored = vendor_version(root)
     staged = [VENDOR, BINDINGS]
+    if refresh_pin_if_mid_cycle(root):
+        staged.append(manifest("libosdp"))
     git(["add", *staged], root)
     print(f"Vendored libosdp {vendored} at {args.ref} ({resolved[:7]}) "
           f"(staged, not committed).")
