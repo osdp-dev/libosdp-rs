@@ -555,13 +555,13 @@ def _porcelain_names(root: Path) -> list[str]:
     return names
 
 
-def require_clean_tree(root: Path) -> None:
+def require_clean_tree(root: Path, action: str = "publishing") -> None:
     # Untracked files are ignored: they can't be committed by us and survive the
     # rollback's `reset --hard`. Only tracked modifications would make the commit
     # ambiguous or be lost on rollback.
     if _porcelain_names(root):
         die("working tree has uncommitted changes to tracked files; "
-            "commit or stash them before publishing")
+            f"commit or stash them before {action}")
 
 
 def require_release_only_dirt(root: Path, crate: str, path: Path) -> None:
@@ -716,6 +716,24 @@ def cmd_prepare(root: Path, args: argparse.Namespace) -> None:
         print(f"\nEdit {rel} — fold the ## Changes hints into Enhancements/Fixes\n"
               "and delete that section — then:")
         print(f"  scripts/make_release.py publish -c {crate}")
+
+
+def cmd_vendor(root: Path, args: argparse.Namespace) -> None:
+    """Move the vendored C library without touching versions or changelogs.
+
+    The mid-cycle counterpart to prepare, which refuses to run at all once a
+    cycle is open. Nothing is committed: the move is staged for review.
+    """
+    require_clean_tree(root, "vendoring")
+    resolved = checkout_vendor(root, args.ref)
+    regenerate_bindings(root)
+    refresh_lockfile(root)
+    vendored = vendor_version(root)
+    staged = [VENDOR, BINDINGS]
+    git(["add", *staged], root)
+    print(f"Vendored libosdp {vendored} at {args.ref} ({resolved[:7]}) "
+          f"(staged, not committed).")
+    print(f"  staged: {', '.join(staged)}")
 
 
 def cmd_publish(root: Path, args: argparse.Namespace) -> None:
@@ -952,6 +970,12 @@ def parse_args() -> argparse.Namespace:
                               "(default: a single-commit release)")
     prepare.set_defaults(bump="patch")
 
+    vendor = sub.add_parser("vendor",
+                            help="mid-cycle: move the vendored C library "
+                                 "without touching versions or changelogs")
+    vendor.add_argument("--ref", required=True, metavar="REF",
+                        help="libosdp tag, branch or commit to vendor")
+
     publish = sub.add_parser("publish", help="finalize + sign the prepared release")
     add_crate(publish)
     publish.add_argument("--no-registry", action="store_true",
@@ -992,6 +1016,8 @@ def main() -> None:
     root = repo_root()
     if args.command == "prepare":
         cmd_prepare(root, args)
+    elif args.command == "vendor":
+        cmd_vendor(root, args)
     elif args.command == "publish":
         cmd_publish(root, args)
     elif args.command == "check-release":
