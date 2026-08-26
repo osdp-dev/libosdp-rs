@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+# Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -21,6 +21,8 @@ jobs:
         uses: actions/checkout@v7
       - name: Validate every published release file
         run: python3 scripts/make_release.py check-changelog
+      - name: Release tool unit tests
+        run: python3 -m unittest discover -s scripts/tests
 
   lint:
     runs-on: ubuntu-latest
