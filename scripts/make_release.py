@@ -295,11 +295,41 @@ def vendor_newest_tag(root: Path) -> str:
     return tags[0].strip()
 
 
-def checkout_vendor(root: Path, tag: str) -> None:
+def sys_target_from_ref(ref: str) -> Version | None:
+    """The version a vendor ref declares by its own name, or None.
+
+    A release tag fixes the crate version before anything is checked out. A
+    branch or a sha does not, so the version has to come from the vendored
+    sources instead -- which only a --cycle prepare may do, because a real
+    release must vendor a tag.
+    """
+    candidate = ref.strip().lstrip("v")
+    if not VERSION_RE.fullmatch(candidate):
+        return None
+    return parse_version(candidate)
+
+
+def checkout_vendor(root: Path, ref: str) -> str:
+    """Detach the vendor submodule at `ref`, resolved against origin.
+
+    Resolved explicitly rather than by `git checkout <ref>`: a bare branch
+    name would prefer a stale local refs/heads/<ref> that plain fetch never
+    advances, silently vendoring an old tree.
+    """
     vendor_root = root / VENDOR
     git(["fetch", "-q", "--tags", "origin"], vendor_root)
-    git(["checkout", "-q", tag], vendor_root)
+    for candidate in (f"refs/tags/{ref}", f"refs/remotes/origin/{ref}",
+                      f"{ref}^{{commit}}"):
+        sha = git(["rev-parse", "-q", "--verify", candidate], vendor_root,
+                  check=False)
+        if sha:
+            break
+    else:
+        die(f"'{ref}' is not a tag, a branch on origin, or a known commit "
+            f"in {VENDOR}")
+    git(["checkout", "-q", "--detach", sha], vendor_root)
     git(["submodule", "update", "--init", "--recursive"], vendor_root)
+    return sha
 
 
 def regenerate_bindings(root: Path) -> None:
@@ -319,7 +349,10 @@ def regenerate_bindings(root: Path) -> None:
                             env=env, capture_output=True, text=True)
     if result.returncode != 0:
         die(f"failed to build libosdp-sys against the new vendor:\n"
-            f"{result.stderr.strip()}")
+            f"{result.stderr.strip()}\n"
+            f"the submodule has already moved; restore it with:\n"
+            f"  git submodule update --init --recursive {VENDOR}\n"
+            f"  git checkout -- {BINDINGS}")
 
 
 def refresh_lockfile(root: Path) -> None:
@@ -370,14 +403,16 @@ def rust_commit_hints(root: Path, crate: str) -> list[str]:
             if line.strip() and not RELEASE_SUBJECT_RE.match(line)]
 
 
-def vendor_commit_hints(root: Path, old: Version, new_tag: str) -> list[str]:
-    """Commits in the C library between the previously vendored tag and new_tag.
+def vendor_commit_hints(root: Path, old: Version, new_ref: str) -> list[str]:
+    """Commits in the C library between the previously vendored tag and new_ref.
 
     A libosdp-sys release carries no Rust-side change of its own; everything
     worth announcing happened in libosdp, so that is where the hints come from.
+    new_ref must already be resolved: a bare branch name would read a stale
+    local refs/heads/ here for the same reason checkout_vendor resolves.
     """
     vendor_root = root / VENDOR
-    log = git(["log", f"v{old}..{new_tag}", "--no-merges", "--format=%h %s"],
+    log = git(["log", f"v{old}..{new_ref}", "--no-merges", "--format=%h %s"],
               vendor_root, check=False)
     return [f"- {line}" for line in log.splitlines()
             if line.strip() and not RELEASE_SUBJECT_RE.match(line)]
@@ -610,17 +645,30 @@ def cmd_prepare(root: Path, args: argparse.Namespace) -> None:
 
     if crate == "libosdp-sys":
         target_tag = args.vendor or vendor_newest_tag(root)
-        target = parse_version(target_tag.lstrip("v"))
-        if target.core <= state.core:
-            die(f"refusing to move libosdp-sys {state} back to {target}; "
+        declared = sys_target_from_ref(target_tag)
+        if declared is None and not args.cycle:
+            die(f"'{target_tag}' is not a release tag; a release must vendor a "
+                f"tagged libosdp. Pass --cycle to open a dev cycle on an "
+                f"untagged ref.")
+        # A named version is checked before the tree is touched, so a wrong
+        # request leaves the worktree alone. An untagged ref cannot be, since
+        # its version is only readable once the sources are checked out.
+        if declared is not None and declared.core <= state.core:
+            die(f"refusing to move libosdp-sys {state} back to {declared}; "
                 f"check 'submodule.vendor.branch' in .gitmodules "
                 f"(currently {vendor_branch(root)})")
-        checkout_vendor(root, target_tag)
+        resolved = checkout_vendor(root, target_tag)
         regenerate_bindings(root)
         vendored = vendor_version(root)
-        if vendored.core != target.core:
+        if declared is not None and vendored.core != declared.core:
             die(f"{target_tag} vendors sources that declare v{vendored}")
-        hints = (vendor_commit_hints(root, state, target_tag)
+        target = declared or vendored
+        # Live only when the ref named no version: the declared-version guard
+        # above already rejected a backwards move for tag-shaped refs.
+        if target.core <= state.core:
+            die(f"refusing to move libosdp-sys {state} back to {target}; the "
+                f"sources at {target_tag} declare v{vendored}")
+        hints = (vendor_commit_hints(root, state, resolved)
                  + rust_commit_hints(root, crate))
     else:
         if args.set:
@@ -893,9 +941,11 @@ def parse_args() -> argparse.Namespace:
     bump.add_argument("--minor", dest="bump", action="store_const", const="minor")
     bump.add_argument("--patch", dest="bump", action="store_const", const="patch")
     prepare.add_argument("--set", help="set an explicit X.Y.Z instead of bumping")
-    prepare.add_argument("--vendor", metavar="vX.Y.Z",
-                         help="libosdp-sys only: vendor this libosdp tag "
-                              "(default: newest on the branch .gitmodules tracks)")
+    prepare.add_argument("--vendor", metavar="REF",
+                         help="libosdp-sys only: vendor this libosdp release "
+                              "tag, or -- with --cycle -- any branch or commit "
+                              "(default: newest tag on the branch .gitmodules "
+                              "tracks)")
     prepare.add_argument("--cycle", action="store_true",
                          help="extended release cycle: set the pre-release "
                               "marker and expect a 'Prepare <tag>' commit "
