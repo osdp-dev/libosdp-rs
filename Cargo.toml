@@ -3,8 +3,7 @@ resolver = "2"
 
 members = [
     "libosdp-sys",
-    "libosdp",
-    "osdpctl"
+    "libosdp"
 ]
 
 [patch.crates-io]

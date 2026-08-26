@@ -4,11 +4,10 @@ One file per release, named exactly after its git tag:
 
     changelog/libosdp-sys-v3.2.3.md
     changelog/libosdp-v0.2.2.md
-    changelog/osdpctl-v0.0.2.md
 
-The three crates version independently — `libosdp-sys` tracks the vendored C
-library exactly, while `libosdp` and `osdpctl` carry their own Rust-side
-semver — so each release gets its own file rather than sharing one log.
+Both crates version independently — `libosdp-sys` tracks the vendored C
+library exactly, while `libosdp` carries its own Rust-side semver — so
+each release gets its own file rather than sharing one log.
 
 Files are scaffolded by `scripts/make_release.py prepare` and validated on
 every push by `make_release.py check-changelog`, before a release by

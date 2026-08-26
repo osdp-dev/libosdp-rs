@@ -3,7 +3,7 @@
 version: 2
 updates:
   # Rust crates. One entry at the workspace root covers every member
-  # (libosdp, libosdp-sys, osdpctl) via the shared Cargo.lock.
+  # (libosdp, libosdp-sys) via the workspace manifests.
   - package-ecosystem: cargo
     directory: /
     schedule:

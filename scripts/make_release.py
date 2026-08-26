@@ -6,9 +6,9 @@
 #
 """libosdp-rs release helper — a human-in-the-loop release flow in two shapes.
 
-Every command takes -c/--crate, because the three crates in this workspace
-version independently: libosdp-sys tracks the vendored C library exactly,
-while libosdp and osdpctl carry their own Rust-side semver.
+Every command takes -c/--crate, because both crates in this workspace version
+independently: libosdp-sys tracks the vendored C library exactly, while
+libosdp carries its own Rust-side semver.
 
 QUICK (the default) — one commit, for patch releases and anything else that
 does not need a long cycle:

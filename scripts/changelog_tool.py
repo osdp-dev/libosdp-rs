@@ -37,7 +37,7 @@ from datetime import UTC, datetime
 
 # Longest first: libosdp-sys must win over libosdp, or "libosdp-sys-v3.2.3.md"
 # parses as crate "libosdp" at version "sys-v3.2.3".
-CRATES = ["libosdp-sys", "libosdp", "osdpctl"]
+CRATES = ["libosdp-sys", "libosdp"]
 
 VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+-]*$")
 RELEASE_FILE_RE = re.compile(
