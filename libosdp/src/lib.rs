@@ -49,7 +49,7 @@
 //!
 //! and the PD context can,
 //!   - notify it's controlling CP about an event (card read, key press, tamper, etc.,)
-//!   - register a closure for commands issued by the CP
+//!   - answer the commands issued by the CP through a [`CommandHandler`]
 //!
 //! You can find a template implementation for CP app [here][3] and PD app [here][4].
 //!
@@ -93,8 +93,8 @@ pub use pdinfo::*;
 use alloc::{borrow::ToOwned, string::String};
 
 pub use cp::{ControlPanel, ControlPanelBuilder, CpEvent, PdIndex};
-pub use error::{CompletionError, Error, FileError};
-pub use pd::PeripheralDevice;
+pub use error::{CompletionError, Error, FileError, Nak};
+pub use pd::{CommandHandler, PeripheralDevice, Responder};
 pub use submit::Submission;
 
 /// Trait to convert between BigEndian and LittleEndian types

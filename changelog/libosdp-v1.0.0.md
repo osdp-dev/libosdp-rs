@@ -34,6 +34,12 @@ Release subject ## TODO
   events unless ControlPanelBuilder::event_queue_capacity says
   otherwise; when it is full, newer events are dropped and counted by
   dropped_events()
+- pd: Answer CP commands through a CommandHandler, replacing
+  set_command_callback. A handler accepts a command with Ok or
+  refuses it with a Nak (BioType, BioFormat, Record), and answers a
+  command that expects data -- a manufacturer command, a status
+  query -- with Responder::reply. Until a handler is set, every
+  command, KEYSET and COMSET included, is refused with Nak::Record
 
 ## Enhancements
 

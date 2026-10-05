@@ -3,11 +3,18 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{queue::DrainQueue, Command, CpEvent, PdIndex};
+use crate::{queue::DrainQueue, CommandHandler, CpEvent, Nak, PdIndex, Responder};
+use alloc::boxed::Box;
 use core::{cell::Cell, ffi::c_void};
 
 pub(crate) type CpEventQueue = DrainQueue<(PdIndex, CpEvent)>;
-pub(crate) type PdCommandCallback = alloc::boxed::Box<dyn FnMut(&mut Command) -> i32 + Send>;
+
+/// What the PD command callback is registered with: the context, which an
+/// inline reply is submitted to, and the application's handler.
+pub(crate) struct PdCommandSlot {
+    pub(crate) ctx: *mut libosdp_sys::osdp_t,
+    pub(crate) handler: CallbackSlot<Box<dyn CommandHandler>>,
+}
 
 /// The application's current callback. LibOSDP is given a pointer to the
 /// slot once, at setup; replacing the callback only swaps the slot's content.
@@ -55,14 +62,18 @@ pub(crate) unsafe extern "C" fn pd_command_trampoline(
     data: *mut c_void,
     cmd_ptr: *mut libosdp_sys::osdp_cmd,
 ) -> i32 {
-    let slot = unsafe { &*(data as *const CallbackSlot<PdCommandCallback>) };
-    match unsafe { core::ptr::read_unaligned(cmd_ptr).try_into() } {
-        Ok(mut cmd) => {
-            let res = slot.call(|callback| callback(&mut cmd)).unwrap_or(-1);
-            unsafe { core::ptr::write_unaligned(cmd_ptr, cmd.into()) };
-            res
-        }
-        Err(_) => -1, // Failed to parse the command data -> Send NAK
+    let slot = unsafe { &*(data as *const PdCommandSlot) };
+    let Ok(cmd) = unsafe { core::ptr::read_unaligned(cmd_ptr) }.try_into() else {
+        return Nak::Record.as_c();
+    };
+    let mut responder = Responder::new(slot.ctx, cmd_ptr);
+    match slot
+        .handler
+        .call(|handler| handler.handle(cmd, &mut responder))
+    {
+        Some(Ok(())) => 0,
+        Some(Err(nak)) => nak.as_c(),
+        None => Nak::Record.as_c(),
     }
 }
 

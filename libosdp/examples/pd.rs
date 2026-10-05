@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use libosdp::{
-    Channel, ChannelError, Error, Flag, PdCapEntity, PdCapability, PdInfoBuilder,
+    Channel, ChannelError, Error, Flag, PdCapEntity, PdCapability, PdInfoBuilder, Responder,
 };
 use std::{thread, time::Duration};
 
@@ -67,9 +67,9 @@ fn main() -> Result<(), Error> {
         .capability(PdCapability::CommunicationSecurity(PdCapEntity::new(1, 1)))
         .secure_channel_key(key);
     let pd = libosdp::PeripheralDevice::new(pd_info, Box::new(channel))?;
-    pd.set_command_callback(|_| {
-        println!("Received command!");
-        0
+    pd.set_command_handler(|command, _: &mut Responder<'_>| {
+        println!("Received {command:?}");
+        Ok(())
     });
     loop {
         pd.refresh();

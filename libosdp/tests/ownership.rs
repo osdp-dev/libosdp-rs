@@ -10,7 +10,8 @@ use common::memory_channel::MemoryChannel;
 use libosdp::{
     BuzzerCommand, CardRead, Channel, ChannelError, Command, CompletionError, ControlPanel,
     ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps, FileTxCommand, KeyPress,
-    PdCapEntity, PdCapability, PdIndex, PdInfoBuilder, PeripheralDevice, Submission,
+    MfgCommand, MfgReply, Nak, PdCapEntity, PdCapability, PdIndex, PdInfoBuilder,
+    PeripheralDevice, Responder, StatusReport, StatusReportType, Submission,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -116,13 +117,13 @@ fn replacing_file_ops_frees_the_old_ones() -> Result<()> {
 }
 
 #[test]
-fn pd_drop_frees_channel_callback_and_file_ops() -> Result<()> {
+fn pd_drop_frees_channel_handler_and_file_ops() -> Result<()> {
     let drops = DropCounter::default();
     let pd = PeripheralDevice::new(pd_info()?, Box::new(IdleChannel(drops.guard())))?;
     let guard = drops.guard();
-    pd.set_command_callback(move |_| {
+    pd.set_command_handler(move |_, _: &mut Responder<'_>| {
         let _ = &guard;
-        0
+        Ok(())
     });
     pd.register_file_ops(Box::new(NoFiles(drops.guard())))?;
     assert_eq!(drops.count(), 0);
@@ -240,24 +241,26 @@ fn refresh_from_inside_a_callback_does_nothing() -> Result<()> {
 }
 
 #[test]
-fn pd_callback_replaced_from_inside_itself_is_freed_after_it_returns() -> Result<()> {
+fn pd_handler_replaced_from_inside_itself_is_freed_after_it_returns() -> Result<()> {
     let (cp, target, pd) = secure_pair()?;
     let drops = DropCounter::default();
     let first = drops.guard();
     let first_calls = Arc::new(AtomicUsize::new(0));
     let second_calls = Arc::new(AtomicUsize::new(0));
     let (seen_first, seen_second) = (first_calls.clone(), second_calls.clone());
-    pd.set_command_callback(move |_| {
+    pd.set_command_handler(move |_, _: &mut Responder<'_>| {
         let seen_second = seen_second.clone();
         PD.with(|pd| {
-            pd.get().unwrap().set_command_callback(move |_| {
-                seen_second.fetch_add(1, Ordering::SeqCst);
-                0
-            })
+            pd.get()
+                .unwrap()
+                .set_command_handler(move |_, _: &mut Responder<'_>| {
+                    seen_second.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                })
         });
         let _ = &first;
         seen_first.fetch_add(1, Ordering::SeqCst);
-        0
+        Ok(())
     });
     PD.with(|cell| cell.set(pd).unwrap());
     let buzz = Command::Buzzer(BuzzerCommand {
@@ -387,7 +390,7 @@ fn refresh_until_done(
 #[test]
 fn command_the_pd_acks_completes_ok() -> Result<()> {
     let (cp, target, pd) = secure_pair()?;
-    pd.set_command_callback(|_| 0);
+    pd.set_command_handler(|_, _: &mut Responder<'_>| Ok(()));
     let submission = cp.submit(target, buzz())?;
     assert_eq!(submission.status(), None);
     assert_eq!(refresh_until_done(&cp, &pd, &submission), Ok(()));
@@ -397,7 +400,7 @@ fn command_the_pd_acks_completes_ok() -> Result<()> {
 #[test]
 fn command_the_pd_naks_completes_failed() -> Result<()> {
     let (cp, target, pd) = secure_pair()?;
-    pd.set_command_callback(|_| -1);
+    pd.set_command_handler(|_, _: &mut Responder<'_>| Err(Nak::Record));
     let submission = cp.submit(target, buzz())?;
     assert_eq!(
         refresh_until_done(&cp, &pd, &submission),
@@ -485,5 +488,79 @@ fn full_event_queue_drops_the_newest_events() -> Result<()> {
         assert_eq!(cp.next_event(), Some((target, expected)));
     }
     assert_eq!(cp.next_event(), None);
+    Ok(())
+}
+
+#[test]
+fn handler_answers_a_manufacturer_command_inline() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    pd.set_command_handler(|cmd, reply: &mut Responder<'_>| match cmd {
+        Command::Mfg(mfg) => {
+            let echo = MfgReply {
+                vendor_code: mfg.vendor_code,
+                data: mfg.data,
+            };
+            reply.reply(Event::MfgReply(echo)).map_err(|_| Nak::Record)
+        }
+        _ => Ok(()),
+    });
+    let mfg = MfgCommand {
+        vendor_code: (0x0A, 0x0B, 0x0C),
+        data: vec![1, 2, 3],
+    };
+    let submission = cp.submit(target, Command::Mfg(mfg))?;
+    assert_eq!(refresh_until_done(&cp, &pd, &submission), Ok(()));
+    let expected = MfgReply {
+        vendor_code: (0x0A, 0x0B, 0x0C),
+        data: vec![1, 2, 3],
+    };
+    let mut received = None;
+    refresh_until(&cp, &pd, || {
+        received = cp.next_event();
+        received.is_some()
+    });
+    assert_eq!(
+        received,
+        Some((target, CpEvent::Event(Event::MfgReply(expected))))
+    );
+    Ok(())
+}
+
+fn local_status(tamper: u8, power: u8) -> StatusReport {
+    let mut report = [0; 64];
+    report[0] = tamper;
+    report[1] = power;
+    StatusReport {
+        type_: StatusReportType::Local,
+        nr_entries: 2,
+        report,
+    }
+}
+
+#[test]
+fn handler_answers_a_status_query_inline() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    pd.set_command_handler(|cmd, reply: &mut Responder<'_>| match cmd {
+        Command::Status(_) => reply
+            .reply(Event::Status(local_status(1, 0)))
+            .map_err(|_| Nak::Record),
+        _ => Ok(()),
+    });
+    let query = StatusReport {
+        type_: StatusReportType::Local,
+        nr_entries: 0,
+        report: [0; 64],
+    };
+    let submission = cp.submit(target, Command::Status(query))?;
+    assert_eq!(refresh_until_done(&cp, &pd, &submission), Ok(()));
+    let mut received = None;
+    refresh_until(&cp, &pd, || {
+        received = cp.next_event();
+        received.is_some()
+    });
+    assert_eq!(
+        received,
+        Some((target, CpEvent::Event(Event::Status(local_status(1, 0)))))
+    );
     Ok(())
 }

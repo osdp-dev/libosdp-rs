@@ -10,7 +10,7 @@ use std::{
 
 use libosdp::{
     ControlPanel, ControlPanelBuilder, Command, CpEvent, Event, PdCapEntity, PdCapability,
-    PdIndex, PdInfoBuilder, PeripheralDevice,
+    PdIndex, PdInfoBuilder, PeripheralDevice, Responder,
 };
 type Result<T> = core::result::Result<T, libosdp::Error>;
 
@@ -99,10 +99,12 @@ impl PdDevice {
             .spawn(move || {
                 let dev = dev_clone;
                 let sender = cmd_tx;
-                dev.lock().unwrap().set_command_callback(move |command| {
-                    sender.send(command.clone()).expect("PD command send");
-                    0
-                });
+                dev.lock()
+                    .unwrap()
+                    .set_command_handler(move |command, _: &mut Responder<'_>| {
+                        sender.send(command).expect("PD command send");
+                        Ok(())
+                    });
                 loop {
                     dev.lock().unwrap().refresh();
                     thread::sleep(time::Duration::from_millis(10));

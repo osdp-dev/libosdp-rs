@@ -48,14 +48,17 @@ See [examples][2] for a working implementation.
 A simplified PD implementation:
 
 ```rust
-let pd_info = PdInfo::new(...);
-let mut pd = PeripheralDevice::new(&mut pd_info)?;
-pd.set_command_callback(|cmd| {
-    println!("Received command {:?}", cmd);
+let pd_info = PdInfoBuilder::new().address(101)?.baud_rate(115200)?;
+let pd = PeripheralDevice::new(pd_info, Box::new(channel))?;
+pd.set_command_handler(|cmd, _: &mut Responder<'_>| {
+    println!("Received command {cmd:?}");
+    Ok(())
 });
 loop {
     pd.refresh();
-    pd.submit(Event::new(...));
+    if let Some(card) = reader.poll() {
+        pd.submit(Event::CardRead(card))?;
+    }
 }
 ```
 

@@ -79,6 +79,30 @@ pub enum CompletionError {
     Aborted,
 }
 
+/// Why a PD refuses a command. LibOSDP answers the CP with the matching
+/// NAK; it reports protocol faults with the other NAK codes itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Nak {
+    /// The requested biometric type is not supported.
+    BioType,
+    /// The requested biometric format is not supported.
+    BioFormat,
+    /// The command could not be processed.
+    Record,
+}
+
+impl Nak {
+    pub(crate) fn as_c(self) -> i32 {
+        let code = match self {
+            Nak::BioType => libosdp_sys::osdp_pd_nak_code_e_OSDP_PD_NAK_BIO_TYPE,
+            Nak::BioFormat => libosdp_sys::osdp_pd_nak_code_e_OSDP_PD_NAK_BIO_FMT,
+            Nak::Record => libosdp_sys::osdp_pd_nak_code_e_OSDP_PD_NAK_RECORD,
+        };
+        -(code as i32)
+    }
+}
+
 /// Errors a [`FileOps`](crate::FileOps) implementation reports to LibOSDP.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]

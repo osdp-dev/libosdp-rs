@@ -13,19 +13,112 @@
 //! to the CP.
 
 use crate::{
-    busy::Busy, Channel, Error, Command, Event, FileOps, PdCapability, PdInfoBuilder, Submission,
+    busy::Busy, Channel, Command, Error, Event, FileOps, Nak, PdCapability, PdInfoBuilder,
+    Submission,
 };
 use crate::ffi::{
-    callback::{pd_command_trampoline, CallbackSlot, PdCommandCallback, Shared},
+    callback::{pd_command_trampoline, CallbackSlot, PdCommandSlot, Shared},
     channel::OwnedChannel,
     file::OwnedFileOps,
     log::pd_log_handler,
     submit::{pd_event_complete, RawSubmission},
 };
 use alloc::{boxed::Box, vec::Vec};
-use core::cell::{Cell, RefCell};
+use core::{
+    cell::{Cell, RefCell},
+    marker::PhantomData,
+};
 
 type Result<T> = core::result::Result<T, Error>;
+
+/// Answers the commands a CP sends to a [`PeripheralDevice`].
+///
+/// The handler runs inside [`PeripheralDevice::refresh`], since LibOSDP
+/// must accept or refuse a command before it replies to the CP, so it must
+/// return promptly. A panic in it is not caught: unwinding out of LibOSDP's
+/// callback aborts the process.
+///
+/// Any `FnMut(Command, &mut Responder<'_>) -> Result<(), Nak>` closure is a
+/// handler; Rust needs its second argument annotated, as in
+/// `|cmd, reply: &mut Responder<'_>| ...`. A handler is moved into the
+/// context, which is `Send`, so it must be `Send` too:
+///
+/// ```compile_fail
+/// # fn f(pd: &libosdp::PeripheralDevice) {
+/// let seen = std::rc::Rc::new(std::cell::Cell::new(0));
+/// pd.set_command_handler(move |_, _: &mut libosdp::Responder<'_>| {
+///     seen.set(seen.get() + 1);
+///     Ok(())
+/// });
+/// # }
+/// ```
+pub trait CommandHandler: Send + 'static {
+    /// Accept `cmd` with `Ok`, or refuse it with a [`Nak`]. A command whose
+    /// reply carries data -- a manufacturer command, a status query -- is
+    /// answered through `reply` before returning.
+    fn handle(&mut self, cmd: Command, reply: &mut Responder<'_>) -> core::result::Result<(), Nak>;
+}
+
+impl<F> CommandHandler for F
+where
+    F: FnMut(Command, &mut Responder<'_>) -> core::result::Result<(), Nak> + Send + 'static,
+{
+    fn handle(&mut self, cmd: Command, reply: &mut Responder<'_>) -> core::result::Result<(), Nak> {
+        self(cmd, reply)
+    }
+}
+
+/// Answers the command a [`CommandHandler`] is handling.
+pub struct Responder<'a> {
+    ctx: *mut libosdp_sys::osdp_t,
+    cmd: *mut libosdp_sys::osdp_cmd,
+    _handling: PhantomData<&'a mut libosdp_sys::osdp_cmd>,
+}
+
+impl Responder<'_> {
+    pub(crate) fn new(ctx: *mut libosdp_sys::osdp_t, cmd: *mut libosdp_sys::osdp_cmd) -> Self {
+        Self {
+            ctx,
+            cmd,
+            _handling: PhantomData,
+        }
+    }
+
+    /// Send `event` as the reply to the command being handled: a
+    /// [`Event::MfgReply`] to a [`Command::Mfg`], or a [`Event::Status`] of
+    /// the requested kind to a [`Command::Status`].
+    ///
+    /// A status report of another kind than the one queried is refused with
+    /// [`Error::InvalidArgument`]. Any other event joins the PD's event
+    /// queue: LibOSDP sends it inline, as the reply to this command, only
+    /// when it answers the command and is at the head of that queue.
+    /// Otherwise it goes out as the response to a later poll.
+    pub fn reply(&mut self, event: Event) -> Result<()> {
+        let cmd = unsafe { &mut *self.cmd };
+        if cmd.id == libosdp_sys::osdp_cmd_e_OSDP_CMD_STATUS {
+            if let Event::Status(report) = event {
+                let query = unsafe { &mut cmd.__bindgen_anon_1.status };
+                if query.type_ != report.type_.into() {
+                    return Err(Error::InvalidArgument("status reply of another kind"));
+                }
+                *query = report.into();
+                return Ok(());
+            }
+        }
+        let (raw, _) = RawSubmission::into_raw(libosdp_sys::osdp_event::from(event));
+        if unsafe { libosdp_sys::osdp_pd_submit_event(self.ctx, raw) } < 0 {
+            unsafe { RawSubmission::reclaim(raw) };
+            return Err(Error::Rejected);
+        }
+        Ok(())
+    }
+}
+
+impl core::fmt::Debug for Responder<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Responder").finish_non_exhaustive()
+    }
+}
 
 /// OSDP Peripheral Device (PD) context
 ///
@@ -41,7 +134,7 @@ pub struct PeripheralDevice {
     busy: Cell<bool>,
     #[allow(dead_code)]
     channel: OwnedChannel,
-    command_callback: Shared<CallbackSlot<PdCommandCallback>>,
+    command_handler: Shared<PdCommandSlot>,
     file_ops: RefCell<Option<OwnedFileOps>>,
 }
 
@@ -71,19 +164,22 @@ impl PeripheralDevice {
                 core::ptr::null_mut(),
             )
         };
-        let command_callback = Shared::new(CallbackSlot::new());
+        let command_handler = Shared::new(PdCommandSlot {
+            ctx,
+            handler: CallbackSlot::new(),
+        });
         unsafe {
             libosdp_sys::osdp_pd_set_command_callback(
                 ctx,
                 Some(pd_command_trampoline),
-                command_callback.data(),
+                command_handler.data(),
             )
         };
         Ok(Self {
             ctx,
             busy: Cell::new(false),
             channel,
-            command_callback,
+            command_handler,
             file_ops: RefCell::new(None),
         })
     }
@@ -131,23 +227,14 @@ impl PeripheralDevice {
         Ok(Submission::new(slot))
     }
 
-    /// Set a closure that gets called when this PD receives a command from the
-    /// CP.
-    ///
-    /// The closure is moved into the context, which is `Send`, so it must be
-    /// `Send` too:
-    ///
-    /// ```compile_fail
-    /// # fn f(pd: &libosdp::PeripheralDevice) {
-    /// let seen = std::rc::Rc::new(std::cell::Cell::new(0));
-    /// pd.set_command_callback(move |_| { seen.set(seen.get() + 1); 0 });
-    /// # }
-    /// ```
-    pub fn set_command_callback<F>(&self, closure: F)
-    where
-        F: FnMut(&mut Command) -> i32 + Send + 'static,
-    {
-        self.command_callback.get().replace(Box::new(closure));
+    /// Answer the CP's commands with `handler`, replacing the previous one.
+    /// Until a handler is set, every command is refused with
+    /// [`Nak::Record`].
+    pub fn set_command_handler(&self, handler: impl CommandHandler) {
+        self.command_handler
+            .get()
+            .handler
+            .replace(Box::new(handler));
     }
 
     /// Check whether a CP is talking to this PD.
