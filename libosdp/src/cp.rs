@@ -8,14 +8,14 @@
 
 use crate::{
     busy::Busy, file::FileOps, Channel, Error, Command, Event, Flag, PdCapability, PdId,
-    PdInfoBuilder,
+    PdInfoBuilder, Submission,
 };
 use crate::ffi::{
     callback::{cp_event_trampoline, CallbackSlot, CpEventCallback, Shared},
     channel::OwnedChannel,
     file::OwnedFileOps,
     log::cp_log_handler,
-    submit::cp_command_complete,
+    submit::{cp_command_complete, RawSubmission},
 };
 use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
 use core::cell::{Cell, RefCell};
@@ -151,7 +151,7 @@ impl ControlPanel {
     /// block and returns early if there is nothing to be done.
     ///
     /// Called from inside one of this context's callbacks, it does nothing.
-    /// That includes application code that [`send_command`](Self::send_command)
+    /// That includes application code that [`submit`](Self::submit)
     /// runs, such as [`FileOps::open`] when starting a file transfer.
     pub fn refresh(&self) {
         let Some(_busy) = Busy::enter(&self.busy) else {
@@ -160,23 +160,37 @@ impl ControlPanel {
         unsafe { libosdp_sys::osdp_cp_refresh(self.ctx) }
     }
 
-    /// Send [`Command`] to `pd`.
+    /// Queue `cmd` for `pd`; the returned handle reports how it ended, once
+    /// [`ControlPanel::refresh`] has run it.
+    ///
+    /// LibOSDP accepts commands only while `pd` is online, and returns
+    /// [`Error::Rejected`] otherwise. An accepted command outlasts a link
+    /// outage: it stays queued and is sent when the PD comes back, unless
+    /// [`ControlPanel::flush`] drops it first. A [`Command::FileTx`] ends
+    /// when the transfer does, not when the PD acknowledges the command.
     ///
     /// Refused with [`Error::Rejected`] from inside one of this context's
     /// callbacks, including application code that this method itself runs,
     /// such as [`FileOps::open`] when starting a file transfer.
-    pub fn send_command(&self, pd: PdIndex, cmd: Command) -> Result<()> {
+    pub fn submit(&self, pd: PdIndex, cmd: Command) -> Result<Submission<'_>> {
         let Some(_busy) = Busy::enter(&self.busy) else {
             return Err(Error::Rejected);
         };
-        let cmd = Box::into_raw(Box::new(libosdp_sys::osdp_cmd::from(cmd)));
-        let rc = unsafe { libosdp_sys::osdp_cp_submit_command(self.ctx, pd.as_c(), cmd) };
+        let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_cmd::from(cmd));
+        let rc = unsafe { libosdp_sys::osdp_cp_submit_command(self.ctx, pd.as_c(), raw) };
         if rc < 0 {
-            drop(unsafe { Box::from_raw(cmd) });
-            Err(Error::Rejected)
-        } else {
-            Ok(())
+            unsafe { RawSubmission::reclaim(raw) };
+            return Err(Error::Rejected);
         }
+        Ok(Submission::new(slot))
+    }
+
+    /// Drop the commands queued for `pd` that have not been sent yet; each
+    /// one ends with [`CompletionError::Flushed`](crate::CompletionError).
+    /// Returns how many were dropped.
+    pub fn flush(&self, pd: PdIndex) -> usize {
+        let dropped = unsafe { libosdp_sys::osdp_cp_flush_commands(self.ctx, pd.as_c()) };
+        usize::try_from(dropped).unwrap_or(0)
     }
 
     /// Set a closure that gets called when a PD sends an event to this CP.
@@ -272,7 +286,7 @@ impl ControlPanel {
     ///
     /// Registering aborts a transfer in progress. It is refused with
     /// [`Error::Rejected`] from inside one of this context's callbacks,
-    /// including application code that [`send_command`](Self::send_command)
+    /// including application code that [`submit`](Self::submit)
     /// runs, such as [`FileOps::open`] when starting a file transfer.
     pub fn register_file_ops(&self, pd: PdIndex, fops: Box<dyn FileOps>) -> Result<()> {
         let Some(_busy) = Busy::enter(&self.busy) else {

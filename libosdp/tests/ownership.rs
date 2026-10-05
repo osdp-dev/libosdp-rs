@@ -8,9 +8,9 @@ mod common;
 
 use common::memory_channel::MemoryChannel;
 use libosdp::{
-    Channel, ChannelError, ControlPanel, ControlPanelBuilder, Error, FileError, Command,
-    BuzzerCommand, FileOps, FileTxCommand, PdCapEntity, PdCapability, PdIndex, PdInfoBuilder,
-    PeripheralDevice,
+    BuzzerCommand, CardRead, Channel, ChannelError, Command, CompletionError, ControlPanel,
+    ControlPanelBuilder, Error, Event, FileError, FileOps, FileTxCommand, PdCapEntity,
+    PdCapability, PdIndex, PdInfoBuilder, PeripheralDevice, Submission,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -193,7 +193,7 @@ fn cp_drop_with_commands_queued_frees_them_via_aborted() -> Result<()> {
         rep_count: 0,
     });
     for _ in 0..8 {
-        cp.send_command(target, buzz.clone())?;
+        cp.submit(target, buzz.clone())?;
     }
     drop(cp);
     drop(pd);
@@ -283,7 +283,7 @@ fn pd_callback_replaced_from_inside_itself_is_freed_after_it_returns() -> Result
         rep_count: 0,
     });
     for _ in 0..2 {
-        cp.send_command(target, buzz.clone())?;
+        cp.submit(target, buzz.clone())?;
     }
     let deadline = Instant::now() + Duration::from_secs(10);
     while second_calls.load(Ordering::SeqCst) == 0 {
@@ -318,7 +318,8 @@ impl FileOps for RegistersFileOpsFromOpen {
         let nested_send = CP.with(|cp| {
             cp.get()
                 .unwrap()
-                .send_command(self.target, Command::FileTx(FileTxCommand { id: 1, flags: 0 }))
+                .submit(self.target, Command::FileTx(FileTxCommand { id: 1, flags: 0 }))
+                .map(|_| ())
         });
         NESTED_SEND.with(|slot| *slot.borrow_mut() = Some(nested_send));
         self.ballast.fill(1);
@@ -336,7 +337,7 @@ impl FileOps for RegistersFileOpsFromOpen {
 }
 
 #[test]
-fn register_file_ops_from_open_during_send_command_is_rejected() -> Result<()> {
+fn register_file_ops_from_open_during_submit_is_rejected() -> Result<()> {
     let (cp, target, _pd) = secure_pair()?;
     let drops = DropCounter::default();
     cp.register_file_ops(
@@ -351,7 +352,8 @@ fn register_file_ops_from_open_during_send_command_is_rejected() -> Result<()> {
     let sent = CP.with(|cp| {
         cp.get()
             .unwrap()
-            .send_command(target, Command::FileTx(FileTxCommand { id: 1, flags: 0 }))
+            .submit(target, Command::FileTx(FileTxCommand { id: 1, flags: 0 }))
+            .map(|_| ())
     });
     assert!(sent.is_err());
     assert_eq!(
@@ -363,5 +365,99 @@ fn register_file_ops_from_open_during_send_command_is_rejected() -> Result<()> {
         Some(Err(Error::Rejected))
     );
     assert_eq!(drops.count(), 0);
+    Ok(())
+}
+
+fn buzz() -> Command {
+    Command::Buzzer(BuzzerCommand {
+        reader: 0,
+        control_code: 1,
+        on_count: 0,
+        off_count: 0,
+        rep_count: 0,
+    })
+}
+
+fn card() -> Event {
+    Event::CardRead(CardRead::new_raw(vec![0x55, 0xAA]))
+}
+
+fn refresh_until_done(
+    cp: &ControlPanel,
+    pd: &PeripheralDevice,
+    submission: &Submission<'_>,
+) -> core::result::Result<(), CompletionError> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(status) = submission.status() {
+            return status;
+        }
+        assert!(Instant::now() < deadline, "submission never completed");
+        cp.refresh();
+        pd.refresh();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn command_the_pd_acks_completes_ok() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    pd.set_command_callback(|_| 0);
+    let submission = cp.submit(target, buzz())?;
+    assert_eq!(submission.status(), None);
+    assert_eq!(refresh_until_done(&cp, &pd, &submission), Ok(()));
+    Ok(())
+}
+
+#[test]
+fn command_the_pd_naks_completes_failed() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    pd.set_command_callback(|_| -1);
+    let submission = cp.submit(target, buzz())?;
+    assert_eq!(
+        refresh_until_done(&cp, &pd, &submission),
+        Err(CompletionError::Failed)
+    );
+    Ok(())
+}
+
+#[test]
+fn flushed_commands_complete_flushed() -> Result<()> {
+    let (cp, target, _pd) = secure_pair()?;
+    let first = cp.submit(target, buzz())?;
+    let second = cp.submit(target, buzz())?;
+    assert_eq!(cp.flush(target), 2);
+    assert_eq!(first.status(), Some(Err(CompletionError::Flushed)));
+    assert_eq!(second.status(), Some(Err(CompletionError::Flushed)));
+    Ok(())
+}
+
+#[test]
+fn event_the_cp_takes_completes_ok() -> Result<()> {
+    let (cp, _target, pd) = secure_pair()?;
+    let submission = pd.submit(card())?;
+    assert_eq!(refresh_until_done(&cp, &pd, &submission), Ok(()));
+    Ok(())
+}
+
+#[test]
+fn flushed_events_complete_flushed() -> Result<()> {
+    let (_cp, _target, pd) = secure_pair()?;
+    let first = pd.submit(card())?;
+    let second = pd.submit(card())?;
+    assert_eq!(pd.flush(), 2);
+    assert_eq!(first.status(), Some(Err(CompletionError::Flushed)));
+    assert_eq!(second.status(), Some(Err(CompletionError::Flushed)));
+    Ok(())
+}
+
+#[test]
+fn pd_drop_with_events_queued_frees_them_via_aborted() -> Result<()> {
+    let (cp, _target, pd) = secure_pair()?;
+    for _ in 0..8 {
+        pd.submit(card())?;
+    }
+    drop(pd);
+    drop(cp);
     Ok(())
 }

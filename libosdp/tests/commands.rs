@@ -22,11 +22,13 @@ fn send_command(
     pd: PdIndex,
     command: Command,
 ) -> Result<()> {
-    cp.send_command(pd, command)
+    cp.submit(pd, command)?;
+    Ok(())
 }
 
 fn notify_event(pd: MutexGuard<'_, PeripheralDevice>, event: Event) -> Result<()> {
-    pd.notify_event(event)
+    pd.submit(event)?;
+    Ok(())
 }
 
 #[test]

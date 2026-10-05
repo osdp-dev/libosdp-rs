@@ -136,7 +136,7 @@ fn test_file_transfer() -> Result<()> {
     pd.get_device().register_file_ops(Box::new(fm))?;
 
     let command = Command::FileTx(FileTxCommand {id: 1, flags: 0});
-    cp.get_device().send_command(cp.pd, command.clone())?;
+    cp.get_device().submit(cp.pd, command.clone())?;
 
     assert_eq!(
         pd.receiver.recv().unwrap(),

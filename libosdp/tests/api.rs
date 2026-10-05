@@ -4,7 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use libosdp::{
-    Channel, ChannelError, ControlPanelBuilder, Error, FileError, PdInfoBuilder,
+    BuzzerCommand, Channel, ChannelError, Command, ControlPanelBuilder, Error, FileError,
+    PdInfoBuilder,
 };
 
 struct Idle;
@@ -90,5 +91,21 @@ fn builder_refuses_more_pds_than_a_bus_can_address() -> Result<(), Error> {
         builder.add_pd(pd_at(126)?),
         Err(Error::InvalidArgument(_))
     ));
+    Ok(())
+}
+
+#[test]
+fn submit_to_an_offline_pd_is_rejected() -> Result<(), Error> {
+    let mut builder = ControlPanelBuilder::new(Box::new(Idle));
+    let pd = builder.add_pd(pd_at(101)?)?;
+    let cp = builder.build()?;
+    let buzz = Command::Buzzer(BuzzerCommand {
+        reader: 0,
+        control_code: 1,
+        on_count: 0,
+        off_count: 0,
+        rep_count: 0,
+    });
+    assert!(matches!(cp.submit(pd, buzz), Err(Error::Rejected)));
     Ok(())
 }

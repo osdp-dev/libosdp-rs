@@ -57,6 +57,28 @@ impl From<core::convert::Infallible> for Error {
     }
 }
 
+/// How a submitted command or event ended, when it did not succeed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum CompletionError {
+    /// The peer refused it, the link failed while it was in flight, or the
+    /// operation it started (a file transfer, say) did not finish.
+    #[cfg_attr(feature = "std", error("failed"))]
+    Failed,
+
+    /// A flush dropped it before it was sent.
+    #[cfg_attr(feature = "std", error("flushed before it was sent"))]
+    Flushed,
+
+    /// The context was torn down before it was sent. A [`Submission`]
+    /// cannot outlive its context, so it never reports this.
+    ///
+    /// [`Submission`]: crate::Submission
+    #[cfg_attr(feature = "std", error("aborted by teardown"))]
+    Aborted,
+}
+
 /// Errors a [`FileOps`](crate::FileOps) implementation reports to LibOSDP.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]

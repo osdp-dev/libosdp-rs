@@ -22,8 +22,13 @@ Release subject ## TODO
 - api: Take &self on every ControlPanel and PeripheralDevice method. A
   context stays Send but not Sync. refresh() called from inside one of
   the context's own callbacks, including FileOps::open run by
-  send_command(), does nothing, and send_command() and
-  register_file_ops() from there return Error::Rejected
+  submit(), does nothing, and submit() and register_file_ops() from
+  there return Error::Rejected
+- api: Replace send_command and notify_event with submit, which
+  returns a Submission whose status() reports how the command or
+  event ended: Ok, or a CompletionError (Failed, Flushed, Aborted).
+  flush_events becomes flush, on the CP too, and returns how many
+  submissions it dropped
 
 ## Enhancements
 

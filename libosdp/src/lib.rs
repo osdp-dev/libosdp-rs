@@ -78,6 +78,7 @@ mod pd;
 mod pdcap;
 mod pdid;
 mod pdinfo;
+mod submit;
 
 // Re-export for convenience
 pub use channel::*;
@@ -91,8 +92,9 @@ pub use pdinfo::*;
 use alloc::{borrow::ToOwned, string::String};
 
 pub use cp::{ControlPanel, ControlPanelBuilder, PdIndex};
-pub use error::{Error, FileError};
+pub use error::{CompletionError, Error, FileError};
 pub use pd::PeripheralDevice;
+pub use submit::Submission;
 
 /// Trait to convert between BigEndian and LittleEndian types
 pub trait ConvertEndian {

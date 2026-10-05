@@ -13,14 +13,14 @@
 //! to the CP.
 
 use crate::{
-    busy::Busy, Channel, Error, Command, Event, FileOps, PdCapability, PdInfoBuilder,
+    busy::Busy, Channel, Error, Command, Event, FileOps, PdCapability, PdInfoBuilder, Submission,
 };
 use crate::ffi::{
     callback::{pd_command_trampoline, CallbackSlot, PdCommandCallback, Shared},
     channel::OwnedChannel,
     file::OwnedFileOps,
     log::pd_log_handler,
-    submit::pd_event_complete,
+    submit::{pd_event_complete, RawSubmission},
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::cell::{Cell, RefCell};
@@ -110,22 +110,25 @@ impl PeripheralDevice {
         unsafe { libosdp_sys::osdp_pd_set_capabilities(self.ctx, cap.as_ptr()) }
     }
 
-    /// Flush or drop any events queued in this PD (but not delivered to CP yet)
-    pub fn flush_events(&self) {
-        let _ = unsafe { libosdp_sys::osdp_pd_flush_events(self.ctx) };
+    /// Drop the events queued for the CP that have not been sent yet; each
+    /// one ends with [`CompletionError::Flushed`](crate::CompletionError).
+    /// Returns how many were dropped.
+    pub fn flush(&self) -> usize {
+        let dropped = unsafe { libosdp_sys::osdp_pd_flush_events(self.ctx) };
+        usize::try_from(dropped).unwrap_or(0)
     }
 
-    /// Queue an [`Event`] for this PD. This will be delivered to CP in
-    /// the next POLL.
-    pub fn notify_event(&self, event: Event) -> Result<()> {
-        let event = Box::into_raw(Box::new(libosdp_sys::osdp_event::from(event)));
-        let rc = unsafe { libosdp_sys::osdp_pd_submit_event(self.ctx, event) };
+    /// Queue `event` to send to the CP in reply to one of its polls; the
+    /// returned handle reports how it ended, once [`PeripheralDevice::refresh`]
+    /// has sent it.
+    pub fn submit(&self, event: Event) -> Result<Submission<'_>> {
+        let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_event::from(event));
+        let rc = unsafe { libosdp_sys::osdp_pd_submit_event(self.ctx, raw) };
         if rc < 0 {
-            drop(unsafe { Box::from_raw(event) });
-            Err(Error::Rejected)
-        } else {
-            Ok(())
+            unsafe { RawSubmission::reclaim(raw) };
+            return Err(Error::Rejected);
         }
+        Ok(Submission::new(slot))
     }
 
     /// Set a closure that gets called when this PD receives a command from the
