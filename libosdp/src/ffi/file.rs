@@ -90,6 +90,9 @@ unsafe extern "C" fn file_close(data: *mut c_void) -> i32 {
 /// which must happen only after LibOSDP stops using it.
 pub(crate) struct OwnedFileOps(*mut Box<dyn OsdpFileOps>);
 
+// The box holds a dyn OsdpFileOps, and OsdpFileOps: Send.
+unsafe impl Send for OwnedFileOps {}
+
 impl OwnedFileOps {
     pub(crate) fn new(ops: Box<dyn OsdpFileOps>) -> Self {
         Self(Box::into_raw(Box::new(ops)))

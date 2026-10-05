@@ -112,9 +112,19 @@ impl ControlPanel {
     }
 
     /// Set a closure that gets called when a PD sends an event to this CP.
+    ///
+    /// The closure is moved into the context, which is `Send`, so it must be
+    /// `Send` too:
+    ///
+    /// ```compile_fail
+    /// # fn f(cp: &mut libosdp::ControlPanel) {
+    /// let seen = std::rc::Rc::new(std::cell::Cell::new(0));
+    /// cp.set_event_callback(move |_, _| { seen.set(seen.get() + 1); 0 });
+    /// # }
+    /// ```
     pub fn set_event_callback<F>(&mut self, closure: F)
     where
-        F: FnMut(i32, OsdpEvent) -> i32 + 'static,
+        F: FnMut(i32, OsdpEvent) -> i32 + Send + 'static,
     {
         let callback = OwnedCallback::<CpEventCallback>::new(Box::new(closure));
         unsafe {

@@ -6,8 +6,8 @@
 use crate::{OsdpCommand, OsdpEvent};
 use core::ffi::c_void;
 
-pub(crate) type CpEventCallback = alloc::boxed::Box<dyn FnMut(i32, OsdpEvent) -> i32>;
-pub(crate) type PdCommandCallback = alloc::boxed::Box<dyn FnMut(&mut OsdpCommand) -> i32>;
+pub(crate) type CpEventCallback = alloc::boxed::Box<dyn FnMut(i32, OsdpEvent) -> i32 + Send>;
+pub(crate) type PdCommandCallback = alloc::boxed::Box<dyn FnMut(&mut OsdpCommand) -> i32 + Send>;
 
 pub(crate) unsafe extern "C" fn cp_event_trampoline(
     data: *mut c_void,

@@ -103,9 +103,19 @@ impl PeripheralDevice {
 
     /// Set a closure that gets called when this PD receives a command from the
     /// CP.
+    ///
+    /// The closure is moved into the context, which is `Send`, so it must be
+    /// `Send` too:
+    ///
+    /// ```compile_fail
+    /// # fn f(pd: &mut libosdp::PeripheralDevice) {
+    /// let seen = std::rc::Rc::new(std::cell::Cell::new(0));
+    /// pd.set_command_callback(move |_| { seen.set(seen.get() + 1); 0 });
+    /// # }
+    /// ```
     pub fn set_command_callback<F>(&mut self, closure: F)
     where
-        F: FnMut(&mut OsdpCommand) -> i32 + 'static,
+        F: FnMut(&mut OsdpCommand) -> i32 + Send + 'static,
     {
         let callback = OwnedCallback::<PdCommandCallback>::new(Box::new(closure));
         unsafe {

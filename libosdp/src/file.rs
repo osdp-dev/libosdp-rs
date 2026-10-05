@@ -11,7 +11,19 @@ type Result<T> = core::result::Result<T, crate::OsdpError>;
 /// File operations handler trait. Any type that implements this trait can be
 /// registered with [`crate::ControlPanel::register_file_ops`] or
 /// [`crate::PeripheralDevice::register_file_ops`].
-pub trait OsdpFileOps {
+///
+/// Implementors are moved into a `Send` context, so they must be `Send`:
+///
+/// ```compile_fail
+/// struct NotSend(std::rc::Rc<()>);
+/// impl libosdp::OsdpFileOps for NotSend {
+///     fn open(&mut self, _: i32, _: bool) -> Result<usize, libosdp::OsdpError> { Ok(0) }
+///     fn offset_read(&self, _: &mut [u8], _: u64) -> Result<usize, libosdp::OsdpError> { Ok(0) }
+///     fn offset_write(&self, _: &[u8], _: u64) -> Result<usize, libosdp::OsdpError> { Ok(0) }
+///     fn close(&mut self) -> Result<(), libosdp::OsdpError> { Ok(()) }
+/// }
+/// ```
+pub trait OsdpFileOps: Send {
     /// Open a file, with pre-agreed File-ID [`id`]; returns the size of the
     /// file that was opened or [`crate::OsdpError::FileTransfer`].
     fn open(&mut self, id: i32, read_only: bool) -> Result<usize>;
