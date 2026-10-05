@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -10,61 +10,11 @@ use crate::{
     file::OsdpFileOps, Channel, OsdpCommand, OsdpError, OsdpEvent, OsdpFlag, PdCapability, PdId,
     PdInfoBuilder,
 };
+use crate::ffi::{callback::get_cp_event_trampoline, log::cp_log_handler};
 use alloc::{boxed::Box, vec::Vec};
 use core::ffi::c_void;
-#[cfg(feature = "defmt")]
-use defmt::{debug, error, info, warn};
-#[cfg(all(feature = "log", not(feature = "defmt")))]
-use log::{debug, error, info, warn};
 
 type Result<T> = core::result::Result<T, OsdpError>;
-
-unsafe extern "C" fn log_handler(
-    _log_level: ::core::ffi::c_int,
-    _file: *const ::core::ffi::c_char,
-    _line: ::core::ffi::c_ulong,
-    _msg: *const ::core::ffi::c_char,
-) {
-    #[cfg(any(feature = "log", feature = "defmt"))]
-    {
-        let msg = crate::cstr_to_string(_msg);
-        let msg = msg.trim();
-        match _log_level as libosdp_sys::osdp_log_level_e {
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_EMERG => error!("CP: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_ALERT => error!("CP: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_CRIT => error!("CP: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_ERROR => error!("CP: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_WARNING => warn!("CP: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_NOTICE => warn!("CP: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_INFO => info!("CP: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_DEBUG => debug!("CP: {}", msg),
-            _ => panic!("Unknown log level"),
-        };
-    }
-}
-
-extern "C" fn trampoline<F>(data: *mut c_void, pd: i32, event: *mut libosdp_sys::osdp_event) -> i32
-where
-    F: FnMut(i32, OsdpEvent) -> i32,
-{
-    match unsafe { core::ptr::read_unaligned(event).try_into() } {
-        Ok(event) => {
-            let callback: &mut F = unsafe { &mut *(data as *mut F) };
-            callback(pd, event)
-        },
-        Err(_) => -1,  // Failed to parse the event data -> Send NAK
-    }
-}
-
-type EventCallback =
-    unsafe extern "C" fn(data: *mut c_void, pd: i32, event: *mut libosdp_sys::osdp_event) -> i32;
-
-fn get_trampoline<F>(_closure: &F) -> EventCallback
-where
-    F: FnMut(i32, OsdpEvent) -> i32,
-{
-    trampoline::<F>
-}
 
 fn cp_setup(info: Vec<crate::OsdpPdInfoHandle>) -> Result<*mut c_void> {
     let ctx = unsafe { libosdp_sys::osdp_cp_setup(info.len() as i32, info.as_ptr() as *const _) };
@@ -111,7 +61,7 @@ impl ControlPanelBuilder {
             })
             .flatten()
             .collect();
-        unsafe { libosdp_sys::osdp_set_log_callback(Some(log_handler)) };
+        unsafe { libosdp_sys::osdp_set_log_callback(Some(cp_log_handler)) };
         Ok(ControlPanel {
             ctx: cp_setup(info)?,
         })
@@ -152,7 +102,7 @@ impl ControlPanel {
         F: FnMut(i32, OsdpEvent) -> i32,
     {
         unsafe {
-            let callback = get_trampoline(&closure);
+            let callback = get_cp_event_trampoline(&closure);
             libosdp_sys::osdp_cp_set_event_callback(
                 self.ctx,
                 Some(callback),

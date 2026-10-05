@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -15,64 +15,11 @@
 use crate::{
     Channel, OsdpCommand, OsdpError, OsdpEvent, OsdpFileOps, PdCapability, PdInfo, PdInfoBuilder,
 };
+use crate::ffi::{callback::get_pd_command_trampoline, log::pd_log_handler};
 use alloc::{boxed::Box, vec::Vec};
 use core::ffi::c_void;
-#[cfg(feature = "defmt")]
-use defmt::{debug, error, info, warn};
-#[cfg(all(feature = "log", not(feature = "defmt")))]
-use log::{debug, error, info, warn};
 
 type Result<T> = core::result::Result<T, OsdpError>;
-type CommandCallback =
-    unsafe extern "C" fn(data: *mut c_void, event: *mut libosdp_sys::osdp_cmd) -> i32;
-
-unsafe extern "C" fn log_handler(
-    _log_level: ::core::ffi::c_int,
-    _file: *const ::core::ffi::c_char,
-    _line: ::core::ffi::c_ulong,
-    _msg: *const ::core::ffi::c_char,
-) {
-    #[cfg(any(feature = "log", feature = "defmt"))]
-    {
-        let msg = crate::cstr_to_string(_msg);
-        let msg = msg.trim();
-        match _log_level as libosdp_sys::osdp_log_level_e {
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_EMERG => error!("PD: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_ALERT => error!("PD: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_CRIT => error!("PD: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_ERROR => error!("PD: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_WARNING => warn!("PD: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_NOTICE => warn!("PD: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_INFO => info!("PD: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_DEBUG => debug!("PD: {}", msg),
-            _ => panic!("Unknown log level"),
-        };
-    }
-}
-
-extern "C" fn trampoline<F>(data_ptr: *mut c_void, cmd_ptr: *mut libosdp_sys::osdp_cmd) -> i32
-where
-    F: FnMut(&mut OsdpCommand) -> i32,
-{
-    match unsafe { core::ptr::read_unaligned(cmd_ptr).try_into() } {
-        Ok(mut cmd) => {
-            let callback: &mut F = unsafe { &mut *(data_ptr as *mut F) };
-            let res = callback(&mut cmd);
-            unsafe {
-                core::ptr::write_unaligned(cmd_ptr, cmd.into());
-            }
-            res
-        },
-        Err(_) => -1,  // Failed to parse the command data -> Send NAK
-    }
-}
-
-fn get_trampoline<F>(_closure: &F) -> CommandCallback
-where
-    F: FnMut(&mut OsdpCommand) -> i32,
-{
-    trampoline::<F>
-}
 
 fn pd_setup(info: PdInfo) -> Result<*mut c_void> {
     let info: crate::OsdpPdInfoHandle = info.into();
@@ -95,7 +42,7 @@ unsafe impl Send for PeripheralDevice {}
 impl PeripheralDevice {
     /// Create a new Peripheral panel object for the PD described by the corresponding PdInfo struct.
     pub fn new(info: PdInfoBuilder, channel: Box<dyn Channel>) -> Result<Self> {
-        unsafe { libosdp_sys::osdp_set_log_callback(Some(log_handler)) };
+        unsafe { libosdp_sys::osdp_set_log_callback(Some(pd_log_handler)) };
         let info = info.channel(channel.into()).build();
         Ok(Self {
             ctx: pd_setup(info)?,
@@ -142,7 +89,7 @@ impl PeripheralDevice {
         F: FnMut(&mut OsdpCommand) -> i32,
     {
         unsafe {
-            let callback = get_trampoline(&closure);
+            let callback = get_pd_command_trampoline(&closure);
             libosdp_sys::osdp_pd_set_command_callback(
                 self.ctx,
                 Some(callback),
