@@ -19,6 +19,11 @@ Release subject ## TODO
   OsdpFlag and OsdpFileOps are now Command, Event, Flag and FileOps;
   payload structs are named for what they carry (LedCommand,
   BuzzerCommand, CardRead, KeyPress, StatusReport, ...)
+- api: Take &self on every ControlPanel and PeripheralDevice method. A
+  context stays Send but not Sync. refresh() called from inside one of
+  the context's own callbacks, including FileOps::open run by
+  send_command(), does nothing, and send_command() and
+  register_file_ops() from there return Error::Rejected
 
 ## Enhancements
 

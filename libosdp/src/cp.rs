@@ -7,17 +7,18 @@
 //! (PD) on the OSDP bus. It can send commands to and receive events from PDs.
 
 use crate::{
-    file::FileOps, Channel, Error, Command, Event, Flag, PdCapability, PdId,
+    busy::Busy, file::FileOps, Channel, Error, Command, Event, Flag, PdCapability, PdId,
     PdInfoBuilder,
 };
 use crate::ffi::{
-    callback::{cp_event_trampoline, CpEventCallback, OwnedCallback},
+    callback::{cp_event_trampoline, CallbackSlot, CpEventCallback, Shared},
     channel::OwnedChannel,
     file::OwnedFileOps,
     log::cp_log_handler,
     submit::cp_command_complete,
 };
 use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
+use core::cell::{Cell, RefCell};
 
 type Result<T> = core::result::Result<T, Error>;
 
@@ -99,22 +100,40 @@ impl ControlPanelBuilder {
                 core::ptr::null_mut(),
             )
         };
+        let event_callback = Shared::new(CallbackSlot::new());
+        unsafe {
+            libosdp_sys::osdp_cp_set_event_callback(
+                ctx,
+                Some(cp_event_trampoline),
+                event_callback.data(),
+            )
+        };
         Ok(ControlPanel {
             ctx,
+            busy: Cell::new(false),
             channel,
-            event_callback: None,
-            file_ops: BTreeMap::new(),
+            event_callback,
+            file_ops: RefCell::new(BTreeMap::new()),
         })
     }
 }
 
 /// OSDP CP device context.
+///
+/// A context can move to another thread but cannot be shared between
+/// threads; wrap it in a `Mutex` to submit from several:
+///
+/// ```compile_fail
+/// fn assert_sync<T: Sync>() {}
+/// assert_sync::<libosdp::ControlPanel>();
+/// ```
 pub struct ControlPanel {
     ctx: *mut core::ffi::c_void,
+    busy: Cell<bool>,
     #[allow(dead_code)]
     channel: OwnedChannel,
-    event_callback: Option<OwnedCallback<CpEventCallback>>,
-    file_ops: BTreeMap<PdIndex, OwnedFileOps>,
+    event_callback: Shared<CallbackSlot<CpEventCallback>>,
+    file_ops: RefCell<BTreeMap<PdIndex, OwnedFileOps>>,
 }
 
 impl core::fmt::Debug for ControlPanel {
@@ -130,12 +149,26 @@ impl ControlPanel {
     /// underlying LibOSDP state. To meet the OSDP timing guarantees, this
     /// function must be called at least once every 50ms. This method does not
     /// block and returns early if there is nothing to be done.
-    pub fn refresh(&mut self) {
+    ///
+    /// Called from inside one of this context's callbacks, it does nothing.
+    /// That includes application code that [`send_command`](Self::send_command)
+    /// runs, such as [`FileOps::open`] when starting a file transfer.
+    pub fn refresh(&self) {
+        let Some(_busy) = Busy::enter(&self.busy) else {
+            return;
+        };
         unsafe { libosdp_sys::osdp_cp_refresh(self.ctx) }
     }
 
     /// Send [`Command`] to `pd`.
-    pub fn send_command(&mut self, pd: PdIndex, cmd: Command) -> Result<()> {
+    ///
+    /// Refused with [`Error::Rejected`] from inside one of this context's
+    /// callbacks, including application code that this method itself runs,
+    /// such as [`FileOps::open`] when starting a file transfer.
+    pub fn send_command(&self, pd: PdIndex, cmd: Command) -> Result<()> {
+        let Some(_busy) = Busy::enter(&self.busy) else {
+            return Err(Error::Rejected);
+        };
         let cmd = Box::into_raw(Box::new(libosdp_sys::osdp_cmd::from(cmd)));
         let rc = unsafe { libosdp_sys::osdp_cp_submit_command(self.ctx, pd.as_c(), cmd) };
         if rc < 0 {
@@ -152,24 +185,16 @@ impl ControlPanel {
     /// `Send` too:
     ///
     /// ```compile_fail
-    /// # fn f(cp: &mut libosdp::ControlPanel) {
+    /// # fn f(cp: &libosdp::ControlPanel) {
     /// let seen = std::rc::Rc::new(std::cell::Cell::new(0));
     /// cp.set_event_callback(move |_, _| { seen.set(seen.get() + 1); 0 });
     /// # }
     /// ```
-    pub fn set_event_callback<F>(&mut self, closure: F)
+    pub fn set_event_callback<F>(&self, closure: F)
     where
         F: FnMut(PdIndex, Event) -> i32 + Send + 'static,
     {
-        let callback = OwnedCallback::<CpEventCallback>::new(Box::new(closure));
-        unsafe {
-            libosdp_sys::osdp_cp_set_event_callback(
-                self.ctx,
-                Some(cp_event_trampoline),
-                callback.data(),
-            );
-        }
-        self.event_callback = Some(callback);
+        self.event_callback.get().replace(Box::new(closure));
     }
 
     /// Get the [`PdId`] that `pd` reported.
@@ -202,7 +227,7 @@ impl ControlPanel {
     /// Panics when LibOSDP refuses the change: setting
     /// [`Flag::InstallMode`], clearing [`Flag::EnforceSecure`], or
     /// setting [`Flag::EnforceSecure`] on a PD without an SCBK.
-    pub fn set_flag(&mut self, pd: PdIndex, flags: Flag, value: bool) {
+    pub fn set_flag(&self, pd: PdIndex, flags: Flag, value: bool) {
         let rc =
             unsafe { libosdp_sys::osdp_cp_modify_flag(self.ctx, pd.as_c(), flags.bits(), value) };
         if rc < 0 {
@@ -244,14 +269,22 @@ impl ControlPanel {
 
     /// Register a file operations handler for `pd`. See [`crate::FileOps`]
     /// trait documentation for more details.
-    pub fn register_file_ops(&mut self, pd: PdIndex, fops: Box<dyn FileOps>) -> Result<()> {
+    ///
+    /// Registering aborts a transfer in progress. It is refused with
+    /// [`Error::Rejected`] from inside one of this context's callbacks,
+    /// including application code that [`send_command`](Self::send_command)
+    /// runs, such as [`FileOps::open`] when starting a file transfer.
+    pub fn register_file_ops(&self, pd: PdIndex, fops: Box<dyn FileOps>) -> Result<()> {
+        let Some(_busy) = Busy::enter(&self.busy) else {
+            return Err(Error::Rejected);
+        };
         let fops = OwnedFileOps::new(fops);
         let raw = fops.as_raw();
         let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, pd.as_c(), &raw) };
         if rc < 0 {
             Err(Error::Rejected)
         } else {
-            self.file_ops.insert(pd, fops);
+            self.file_ops.borrow_mut().insert(pd, fops);
             Ok(())
         }
     }

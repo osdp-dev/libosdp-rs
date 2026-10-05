@@ -66,7 +66,7 @@ fn main() -> Result<(), Error> {
         .flag(Flag::EnforceSecure)
         .capability(PdCapability::CommunicationSecurity(PdCapEntity::new(1, 1)))
         .secure_channel_key(key);
-    let mut pd = libosdp::PeripheralDevice::new(pd_info, Box::new(channel))?;
+    let pd = libosdp::PeripheralDevice::new(pd_info, Box::new(channel))?;
     pd.set_command_callback(|_| {
         println!("Received command!");
         0

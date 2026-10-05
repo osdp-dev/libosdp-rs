@@ -18,14 +18,14 @@ use crate::common::{
 };
 
 fn send_command(
-    mut cp: MutexGuard<'_, ControlPanel>,
+    cp: MutexGuard<'_, ControlPanel>,
     pd: PdIndex,
     command: Command,
 ) -> Result<()> {
     cp.send_command(pd, command)
 }
 
-fn notify_event(mut pd: MutexGuard<'_, PeripheralDevice>, event: Event) -> Result<()> {
+fn notify_event(pd: MutexGuard<'_, PeripheralDevice>, event: Event) -> Result<()> {
     pd.notify_event(event)
 }
 

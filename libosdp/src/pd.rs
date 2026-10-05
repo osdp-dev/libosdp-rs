@@ -13,26 +13,36 @@
 //! to the CP.
 
 use crate::{
-    Channel, Error, Command, Event, FileOps, PdCapability, PdInfoBuilder,
+    busy::Busy, Channel, Error, Command, Event, FileOps, PdCapability, PdInfoBuilder,
 };
 use crate::ffi::{
-    callback::{pd_command_trampoline, OwnedCallback, PdCommandCallback},
+    callback::{pd_command_trampoline, CallbackSlot, PdCommandCallback, Shared},
     channel::OwnedChannel,
     file::OwnedFileOps,
     log::pd_log_handler,
     submit::pd_event_complete,
 };
 use alloc::{boxed::Box, vec::Vec};
+use core::cell::{Cell, RefCell};
 
 type Result<T> = core::result::Result<T, Error>;
 
 /// OSDP Peripheral Device (PD) context
+///
+/// A context can move to another thread but cannot be shared between
+/// threads:
+///
+/// ```compile_fail
+/// fn assert_sync<T: Sync>() {}
+/// assert_sync::<libosdp::PeripheralDevice>();
+/// ```
 pub struct PeripheralDevice {
     ctx: *mut libosdp_sys::osdp_t,
+    busy: Cell<bool>,
     #[allow(dead_code)]
     channel: OwnedChannel,
-    command_callback: Option<OwnedCallback<PdCommandCallback>>,
-    file_ops: Option<OwnedFileOps>,
+    command_callback: Shared<CallbackSlot<PdCommandCallback>>,
+    file_ops: RefCell<Option<OwnedFileOps>>,
 }
 
 impl core::fmt::Debug for PeripheralDevice {
@@ -61,11 +71,20 @@ impl PeripheralDevice {
                 core::ptr::null_mut(),
             )
         };
+        let command_callback = Shared::new(CallbackSlot::new());
+        unsafe {
+            libosdp_sys::osdp_pd_set_command_callback(
+                ctx,
+                Some(pd_command_trampoline),
+                command_callback.data(),
+            )
+        };
         Ok(Self {
             ctx,
+            busy: Cell::new(false),
             channel,
-            command_callback: None,
-            file_ops: None,
+            command_callback,
+            file_ops: RefCell::new(None),
         })
     }
 
@@ -73,12 +92,17 @@ impl PeripheralDevice {
     /// and must be called from the application. To meet the OSDP timing
     /// guarantees, this function must be called at least once every 50ms. This
     /// method does not block and returns early if there is nothing to be done.
-    pub fn refresh(&mut self) {
+    ///
+    /// Called from inside one of this context's callbacks, it does nothing.
+    pub fn refresh(&self) {
+        let Some(_busy) = Busy::enter(&self.busy) else {
+            return;
+        };
         unsafe { libosdp_sys::osdp_pd_refresh(self.ctx) }
     }
 
     /// Set a vector of [`PdCapability`] for this PD.
-    pub fn set_capabilities(&mut self, cap: &[PdCapability]) {
+    pub fn set_capabilities(&self, cap: &[PdCapability]) {
         let cap: Vec<libosdp_sys::osdp_pd_cap> = cap
             .iter()
             .map(|c| -> libosdp_sys::osdp_pd_cap { c.clone().into() })
@@ -87,13 +111,13 @@ impl PeripheralDevice {
     }
 
     /// Flush or drop any events queued in this PD (but not delivered to CP yet)
-    pub fn flush_events(&mut self) {
+    pub fn flush_events(&self) {
         let _ = unsafe { libosdp_sys::osdp_pd_flush_events(self.ctx) };
     }
 
     /// Queue an [`Event`] for this PD. This will be delivered to CP in
     /// the next POLL.
-    pub fn notify_event(&mut self, event: Event) -> Result<()> {
+    pub fn notify_event(&self, event: Event) -> Result<()> {
         let event = Box::into_raw(Box::new(libosdp_sys::osdp_event::from(event)));
         let rc = unsafe { libosdp_sys::osdp_pd_submit_event(self.ctx, event) };
         if rc < 0 {
@@ -111,24 +135,16 @@ impl PeripheralDevice {
     /// `Send` too:
     ///
     /// ```compile_fail
-    /// # fn f(pd: &mut libosdp::PeripheralDevice) {
+    /// # fn f(pd: &libosdp::PeripheralDevice) {
     /// let seen = std::rc::Rc::new(std::cell::Cell::new(0));
     /// pd.set_command_callback(move |_| { seen.set(seen.get() + 1); 0 });
     /// # }
     /// ```
-    pub fn set_command_callback<F>(&mut self, closure: F)
+    pub fn set_command_callback<F>(&self, closure: F)
     where
         F: FnMut(&mut Command) -> i32 + Send + 'static,
     {
-        let callback = OwnedCallback::<PdCommandCallback>::new(Box::new(closure));
-        unsafe {
-            libosdp_sys::osdp_pd_set_command_callback(
-                self.ctx,
-                Some(pd_command_trampoline),
-                callback.data(),
-            )
-        }
-        self.command_callback = Some(callback);
+        self.command_callback.get().replace(Box::new(closure));
     }
 
     /// Check whether a CP is talking to this PD.
@@ -162,14 +178,20 @@ impl PeripheralDevice {
 
     /// Register a file operations handler for PD. See [`crate::FileOps`]
     /// trait documentation for more details.
-    pub fn register_file_ops(&mut self, fops: Box<dyn FileOps>) -> Result<()> {
+    ///
+    /// Registering aborts a transfer in progress. It is refused with
+    /// [`Error::Rejected`] from inside one of this context's callbacks.
+    pub fn register_file_ops(&self, fops: Box<dyn FileOps>) -> Result<()> {
+        let Some(_busy) = Busy::enter(&self.busy) else {
+            return Err(Error::Rejected);
+        };
         let fops = OwnedFileOps::new(fops);
         let raw = fops.as_raw();
         let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, 0, &raw) };
         if rc < 0 {
             Err(Error::Rejected)
         } else {
-            self.file_ops = Some(fops);
+            *self.file_ops.borrow_mut() = Some(fops);
             Ok(())
         }
     }
