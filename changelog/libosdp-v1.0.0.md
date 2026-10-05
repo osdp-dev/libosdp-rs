@@ -15,6 +15,10 @@ Release subject ## TODO
 - cp: Address PDs by the PdIndex that ControlPanelBuilder::add_pd
   returns rather than by an integer offset. add_pd now takes &mut self
   and refuses a 127th PD when it is added, not at build()
+- api: Drop the Osdp prefix from public types. OsdpCommand, OsdpEvent,
+  OsdpFlag and OsdpFileOps are now Command, Event, Flag and FileOps;
+  payload structs are named for what they carry (LedCommand,
+  BuzzerCommand, CardRead, KeyPress, StatusReport, ...)
 
 ## Enhancements
 

@@ -34,7 +34,7 @@ cp.set_event_callback(|pd, event| {
 });
 loop {
     cp.refresh();
-    cp.send_command(0, OsdpCommand::new(...));
+    cp.send_command(0, Command::new(...));
 }
 ```
 
@@ -52,7 +52,7 @@ pd.set_command_callback(|cmd| {
 });
 loop {
     pd.refresh();
-    cp.notify_event(OsdpEvent::new(...));
+    cp.notify_event(Event::new(...));
 }
 ```
 

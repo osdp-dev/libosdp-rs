@@ -57,7 +57,7 @@ impl From<core::convert::Infallible> for Error {
     }
 }
 
-/// Errors a [`OsdpFileOps`](crate::OsdpFileOps) implementation reports to LibOSDP.
+/// Errors a [`FileOps`](crate::FileOps) implementation reports to LibOSDP.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

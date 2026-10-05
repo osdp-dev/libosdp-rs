@@ -8,8 +8,8 @@ mod common;
 
 use common::memory_channel::MemoryChannel;
 use libosdp::{
-    Channel, ChannelError, ControlPanel, ControlPanelBuilder, Error, FileError, OsdpCommand,
-    OsdpCommandBuzzer, OsdpFileOps, PdCapEntity, PdCapability, PdIndex, PdInfoBuilder,
+    Channel, ChannelError, ControlPanel, ControlPanelBuilder, Error, FileError, Command,
+    BuzzerCommand, FileOps, PdCapEntity, PdCapability, PdIndex, PdInfoBuilder,
     PeripheralDevice,
 };
 use std::sync::{
@@ -62,7 +62,7 @@ impl Channel for IdleChannel {
 
 struct NoFiles(#[allow(dead_code)] DropGuard);
 
-impl OsdpFileOps for NoFiles {
+impl FileOps for NoFiles {
     fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, FileError> {
         Err(FileError::NotFound)
     }
@@ -165,7 +165,7 @@ fn secure_pair() -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
 #[test]
 fn cp_drop_with_commands_queued_frees_them_via_aborted() -> Result<()> {
     let (mut cp, target, pd) = secure_pair()?;
-    let buzz = OsdpCommand::Buzzer(OsdpCommandBuzzer {
+    let buzz = Command::Buzzer(BuzzerCommand {
         reader: 0,
         control_code: 1,
         on_count: 0,

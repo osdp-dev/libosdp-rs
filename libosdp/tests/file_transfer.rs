@@ -8,7 +8,7 @@ mod common;
 type Result<T> = core::result::Result<T, libosdp::Error>;
 
 use core::time::Duration;
-use libosdp::{FileError, OsdpCommand, OsdpCommandFileTx, OsdpFileOps};
+use libosdp::{FileError, Command, FileTxCommand, FileOps};
 use rand::RngExt;
 use std::{
     cmp,
@@ -44,7 +44,7 @@ impl OsdpFileManager {
     }
 }
 
-impl OsdpFileOps for OsdpFileManager {
+impl FileOps for OsdpFileManager {
     fn open(&mut self, id: i32, read_only: bool) -> core::result::Result<usize, FileError> {
         let path = self.files.get(&id).ok_or(FileError::NotFound)?;
         log::debug!("File {:?}", path);
@@ -135,7 +135,7 @@ fn test_file_transfer() -> Result<()> {
 
     pd.get_device().register_file_ops(Box::new(fm))?;
 
-    let command = OsdpCommand::FileTx(OsdpCommandFileTx {id: 1, flags: 0});
+    let command = Command::FileTx(FileTxCommand {id: 1, flags: 0});
     cp.get_device().send_command(cp.pd, command.clone())?;
 
     assert_eq!(

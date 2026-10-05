@@ -16,14 +16,14 @@ type Result<T> = core::result::Result<T, crate::FileError>;
 ///
 /// ```compile_fail
 /// struct NotSend(std::rc::Rc<()>);
-/// impl libosdp::OsdpFileOps for NotSend {
+/// impl libosdp::FileOps for NotSend {
 ///     fn open(&mut self, _: i32, _: bool) -> Result<usize, libosdp::FileError> { Ok(0) }
 ///     fn offset_read(&self, _: &mut [u8], _: u64) -> Result<usize, libosdp::FileError> { Ok(0) }
 ///     fn offset_write(&self, _: &[u8], _: u64) -> Result<usize, libosdp::FileError> { Ok(0) }
 ///     fn close(&mut self) -> Result<(), libosdp::FileError> { Ok(()) }
 /// }
 /// ```
-pub trait OsdpFileOps: Send {
+pub trait FileOps: Send {
     /// Open a file, with pre-agreed File-ID [`id`]; returns the size of the
     /// file that was opened.
     fn open(&mut self, id: i32, read_only: bool) -> Result<usize>;

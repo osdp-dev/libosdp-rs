@@ -9,7 +9,7 @@ type Result<T> = core::result::Result<T, libosdp::Error>;
 use std::{sync::MutexGuard, thread, time};
 
 use libosdp::{
-    Channel, ControlPanel, OsdpCommand, OsdpCommandBuzzer, OsdpEvent, OsdpEventCardRead,
+    Channel, ControlPanel, Command, BuzzerCommand, Event, CardRead,
     PdIndex, PeripheralDevice,
 };
 
@@ -20,12 +20,12 @@ use crate::common::{
 fn send_command(
     mut cp: MutexGuard<'_, ControlPanel>,
     pd: PdIndex,
-    command: OsdpCommand,
+    command: Command,
 ) -> Result<()> {
     cp.send_command(pd, command)
 }
 
-fn notify_event(mut pd: MutexGuard<'_, PeripheralDevice>, event: OsdpEvent) -> Result<()> {
+fn notify_event(mut pd: MutexGuard<'_, PeripheralDevice>, event: Event) -> Result<()> {
     pd.notify_event(event)
 }
 
@@ -58,19 +58,19 @@ fn test_commands() -> Result<()> {
         thread::sleep(time::Duration::from_secs(1));
     }
 
-    let data = OsdpCommandBuzzer {
+    let data = BuzzerCommand {
         reader: 0,
         control_code: 1,
         on_count: 0,
         off_count: 0,
         rep_count: 0,
     };
-    let command = OsdpCommand::Buzzer(data);
+    let command = Command::Buzzer(data);
     send_command(cp.get_device(), cp.pd, command.clone())?;
     let cmd_rx = pd.receiver.recv().unwrap();
     assert_eq!(cmd_rx, command, "Buzzer command check failed");
 
-    let event = OsdpEvent::CardRead(OsdpEventCardRead::new_raw(vec![0x55, 0xAA]));
+    let event = Event::CardRead(CardRead::new_raw(vec![0x55, 0xAA]));
     notify_event(pd.get_device(), event.clone())?;
     assert_eq!(
         cp.receiver.recv().unwrap(),

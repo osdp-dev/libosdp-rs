@@ -104,7 +104,7 @@ pub trait ConvertEndian {
 bitflags::bitflags! {
     /// OSDP setup flags
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-    pub struct OsdpFlag: u32 {
+    pub struct Flag: u32 {
         /// Make security conscious assumptions where possible. Fail where these
         /// assumptions don't hold. The following restrictions are enforced in
         /// this mode:
@@ -128,14 +128,14 @@ bitflags::bitflags! {
     }
 }
 
-impl core::str::FromStr for OsdpFlag {
+impl core::str::FromStr for Flag {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "EnforceSecure" => Ok(OsdpFlag::EnforceSecure),
-            "InstallMode" => Ok(OsdpFlag::InstallMode),
-            "IgnoreUnsolicited" => Ok(OsdpFlag::IgnoreUnsolicited),
+            "EnforceSecure" => Ok(Flag::EnforceSecure),
+            "InstallMode" => Ok(Flag::InstallMode),
+            "IgnoreUnsolicited" => Ok(Flag::IgnoreUnsolicited),
             _ => Err(Error::InvalidArgument("unknown flag name")),
         }
     }
@@ -167,7 +167,7 @@ mod serde_tests {
 
     #[test]
     fn commands_and_events_are_serde() {
-        assert_serde::<crate::OsdpCommand>();
-        assert_serde::<crate::OsdpEvent>();
+        assert_serde::<crate::Command>();
+        assert_serde::<crate::Event>();
     }
 }

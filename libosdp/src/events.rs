@@ -6,7 +6,7 @@
 //! OSDP PDs have to send messages to it's controlling unit - CP to intimate it
 //! about various events that originate there (such as key press, card reads,
 //! etc.,). They do this by creating an "event" and sending it to the CP. This
-//! module is responsible to handling such events though [`OsdpEvent`].
+//! module is responsible to handling such events though [`Event`].
 
 use crate::Error;
 use alloc::vec::Vec;
@@ -23,7 +23,7 @@ use defmt::panic;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum OsdpCardFormats {
+pub enum CardFormat {
     /// Card format is not specified
     #[default]
     Unspecified,
@@ -32,29 +32,29 @@ pub enum OsdpCardFormats {
     Wiegand,
 }
 
-impl TryFrom<libosdp_sys::osdp_event_cardread_format_e> for OsdpCardFormats {
+impl TryFrom<libosdp_sys::osdp_event_cardread_format_e> for CardFormat {
     type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_event_cardread_format_e) -> Result<Self> {
         match value {
             libosdp_sys::osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_UNSPECIFIED => {
-                Ok(OsdpCardFormats::Unspecified)
+                Ok(CardFormat::Unspecified)
             }
             libosdp_sys::osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_WIEGAND => {
-                Ok(OsdpCardFormats::Wiegand)
+                Ok(CardFormat::Wiegand)
             }
             _ => Err(Error::Malformed("card format")),
         }
     }
 }
 
-impl From<OsdpCardFormats> for libosdp_sys::osdp_event_cardread_format_e {
-    fn from(val: OsdpCardFormats) -> Self {
+impl From<CardFormat> for libosdp_sys::osdp_event_cardread_format_e {
+    fn from(val: CardFormat) -> Self {
         match val {
-            OsdpCardFormats::Unspecified => {
+            CardFormat::Unspecified => {
                 libosdp_sys::osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_UNSPECIFIED
             }
-            OsdpCardFormats::Wiegand => {
+            CardFormat::Wiegand => {
                 libosdp_sys::osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_WIEGAND
             }
         }
@@ -65,7 +65,7 @@ impl From<OsdpCardFormats> for libosdp_sys::osdp_event_cardread_format_e {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct OsdpEventCardRead {
+pub struct CardRead {
     /// Reader (another device connected to this PD) which caused this event
     ///
     /// 0 - self
@@ -75,7 +75,7 @@ pub struct OsdpEventCardRead {
     pub reader_no: i32,
 
     /// Format of the card that was read
-    pub format: OsdpCardFormats,
+    pub format: CardFormat,
 
     /// The direction of the PD where the card read happened (some PDs have two
     /// physical card readers to put on either side of a door).
@@ -84,21 +84,21 @@ pub struct OsdpEventCardRead {
     /// true - Backward
     pub direction: bool,
 
-    /// Number of valid data bits in [`OsdpEventCardRead::data`] when the card
-    /// format is not [`OsdpCardFormats::Ascii`]. For [`OsdpCardFormats::Ascii`], this
+    /// Number of valid data bits in [`CardRead::data`] when the card
+    /// format is not [`CardFormat::Ascii`]. For [`CardFormat::Ascii`], this
     /// field is set to zero.
     pub nr_bits: usize,
 
-    /// Card data; bytes or bits depending on [`OsdpCardFormats`]
+    /// Card data; bytes or bits depending on [`CardFormat`]
     pub data: Vec<u8>,
 }
 
-impl OsdpEventCardRead {
+impl CardRead {
     /// Create an raw data card read event for self and direction set to forward
     pub fn new_raw(data: Vec<u8>) -> Self {
         Self {
             reader_no: 0,
-            format: OsdpCardFormats::Unspecified,
+            format: CardFormat::Unspecified,
             direction: false,
             nr_bits: data.len() * 8,
             data,
@@ -112,7 +112,7 @@ impl OsdpEventCardRead {
         }
         Ok(Self {
             reader_no: 0,
-            format: OsdpCardFormats::Wiegand,
+            format: CardFormat::Wiegand,
             direction: false,
             nr_bits,
             data,
@@ -120,7 +120,7 @@ impl OsdpEventCardRead {
     }
 }
 
-impl TryFrom<libosdp_sys::osdp_event_cardread> for OsdpEventCardRead {
+impl TryFrom<libosdp_sys::osdp_event_cardread> for CardRead {
     type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_event_cardread) -> Result<Self> {
@@ -128,7 +128,7 @@ impl TryFrom<libosdp_sys::osdp_event_cardread> for OsdpEventCardRead {
         let len = value.length as usize;
         let (nr_bits, nr_bytes) = (len, len.div_ceil(8));
 
-        Ok(OsdpEventCardRead {
+        Ok(CardRead {
             reader_no: value.reader_no,
             format,
             direction: value.direction == 1,
@@ -138,8 +138,8 @@ impl TryFrom<libosdp_sys::osdp_event_cardread> for OsdpEventCardRead {
     }
 }
 
-impl From<OsdpEventCardRead> for libosdp_sys::osdp_event_cardread {
-    fn from(value: OsdpEventCardRead) -> Self {
+impl From<CardRead> for libosdp_sys::osdp_event_cardread {
+    fn from(value: CardRead) -> Self {
         let mut data = [0; libosdp_sys::OSDP_EVENT_CARDREAD_MAX_DATALEN as usize];
         let length = value.nr_bits as u16;
         data[..value.data.len()].copy_from_slice(&value.data[..]);
@@ -157,7 +157,7 @@ impl From<OsdpEventCardRead> for libosdp_sys::osdp_event_cardread {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct OsdpEventKeyPress {
+pub struct KeyPress {
     /// Reader (another device connected to this PD) which caused this event
     ///
     /// 0 - self
@@ -170,26 +170,26 @@ pub struct OsdpEventKeyPress {
     pub data: Vec<u8>,
 }
 
-impl OsdpEventKeyPress {
+impl KeyPress {
     /// Create key press event for the keys specified in `data`.
     pub fn new(data: Vec<u8>) -> Self {
         Self { reader_no: 0, data }
     }
 }
 
-impl From<libosdp_sys::osdp_event_keypress> for OsdpEventKeyPress {
+impl From<libosdp_sys::osdp_event_keypress> for KeyPress {
     fn from(value: libosdp_sys::osdp_event_keypress) -> Self {
         let n = value.length as usize;
         let data = value.data[0..n].to_vec();
-        OsdpEventKeyPress {
+        KeyPress {
             reader_no: value.reader_no,
             data,
         }
     }
 }
 
-impl From<OsdpEventKeyPress> for libosdp_sys::osdp_event_keypress {
-    fn from(value: OsdpEventKeyPress) -> Self {
+impl From<KeyPress> for libosdp_sys::osdp_event_keypress {
+    fn from(value: KeyPress) -> Self {
         let mut data = [0; libosdp_sys::OSDP_EVENT_KEYPRESS_MAX_DATALEN as usize];
         data[..value.data.len()].copy_from_slice(&value.data[..]);
         libosdp_sys::osdp_event_keypress {
@@ -204,7 +204,7 @@ impl From<OsdpEventKeyPress> for libosdp_sys::osdp_event_keypress {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct OsdpEventMfgReply {
+pub struct MfgReply {
     /// 3-byte IEEE assigned OUI used as vendor code
     pub vendor_code: (u8, u8, u8),
 
@@ -212,21 +212,21 @@ pub struct OsdpEventMfgReply {
     pub data: Vec<u8>,
 }
 
-impl From<libosdp_sys::osdp_event_mfgrep> for OsdpEventMfgReply {
+impl From<libosdp_sys::osdp_event_mfgrep> for MfgReply {
     fn from(value: libosdp_sys::osdp_event_mfgrep) -> Self {
         let n = value.length as usize;
         let data = value.data[0..n].to_vec();
         let bytes = value.vendor_code.to_le_bytes();
         let vendor_code: (u8, u8, u8) = (bytes[0], bytes[1], bytes[2]);
-        OsdpEventMfgReply {
+        MfgReply {
             vendor_code,
             data,
         }
     }
 }
 
-impl From<OsdpEventMfgReply> for libosdp_sys::osdp_event_mfgrep {
-    fn from(value: OsdpEventMfgReply) -> Self {
+impl From<MfgReply> for libosdp_sys::osdp_event_mfgrep {
+    fn from(value: MfgReply) -> Self {
         let mut data = [0; libosdp_sys::OSDP_EVENT_MFGREP_MAX_DATALEN as usize];
         data[..value.data.len()].copy_from_slice(&value.data[..]);
         libosdp_sys::osdp_event_mfgrep {
@@ -241,7 +241,7 @@ impl From<OsdpEventMfgReply> for libosdp_sys::osdp_event_mfgrep {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum OsdpStatusReportType {
+pub enum StatusReportType {
     /// Input status report
     Input,
     /// Output status report
@@ -252,41 +252,41 @@ pub enum OsdpStatusReportType {
     Local,
 }
 
-impl TryFrom<libosdp_sys::osdp_status_report_type> for OsdpStatusReportType {
+impl TryFrom<libosdp_sys::osdp_status_report_type> for StatusReportType {
     type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_status_report_type) -> Result<Self> {
         match value {
             libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_INPUT => {
-                Ok(OsdpStatusReportType::Input)
+                Ok(StatusReportType::Input)
             }
             libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_OUTPUT => {
-                Ok(OsdpStatusReportType::Output)
+                Ok(StatusReportType::Output)
             }
             libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_READER => {
-                Ok(OsdpStatusReportType::Reader)
+                Ok(StatusReportType::Reader)
             }
             libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_LOCAL => {
-                Ok(OsdpStatusReportType::Local)
+                Ok(StatusReportType::Local)
             }
             _ => Err(Error::Malformed("status report type")),
         }
     }
 }
 
-impl From<OsdpStatusReportType> for libosdp_sys::osdp_status_report_type {
-    fn from(value: OsdpStatusReportType) -> Self {
+impl From<StatusReportType> for libosdp_sys::osdp_status_report_type {
+    fn from(value: StatusReportType) -> Self {
         match value {
-            OsdpStatusReportType::Input => {
+            StatusReportType::Input => {
                 libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_INPUT
             }
-            OsdpStatusReportType::Output => {
+            StatusReportType::Output => {
                 libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_OUTPUT
             }
-            OsdpStatusReportType::Reader => {
+            StatusReportType::Reader => {
                 libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_READER
             }
-            OsdpStatusReportType::Local => {
+            StatusReportType::Local => {
                 libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_LOCAL
             }
         }
@@ -304,9 +304,9 @@ impl From<OsdpStatusReportType> for libosdp_sys::osdp_status_report_type {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct OsdpStatusReport {
+pub struct StatusReport {
     /// The kind of event to report see `enum osdp_event_status_type_e`
-    pub type_: OsdpStatusReportType,
+    pub type_: StatusReportType,
     /// Number of valid entries in `report`
     pub nr_entries: usize,
     /// Status report
@@ -314,11 +314,11 @@ pub struct OsdpStatusReport {
     pub report: [u8; 64],
 }
 
-impl TryFrom<libosdp_sys::osdp_status_report> for OsdpStatusReport {
+impl TryFrom<libosdp_sys::osdp_status_report> for StatusReport {
     type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_status_report) -> Result<Self> {
-        Ok(OsdpStatusReport {
+        Ok(StatusReport {
             type_: value.type_.try_into()?,
             nr_entries: value.nr_entries as usize,
             report: value.report,
@@ -326,8 +326,8 @@ impl TryFrom<libosdp_sys::osdp_status_report> for OsdpStatusReport {
     }
 }
 
-impl From<OsdpStatusReport> for libosdp_sys::osdp_status_report {
-    fn from(value: OsdpStatusReport) -> Self {
+impl From<StatusReport> for libosdp_sys::osdp_status_report {
+    fn from(value: StatusReport) -> Self {
         libosdp_sys::osdp_status_report {
             type_: value.type_.into(),
             nr_entries: value.nr_entries as i32,
@@ -339,28 +339,28 @@ impl From<OsdpStatusReport> for libosdp_sys::osdp_status_report {
 /// CP to intimate it about various events that originate there (such as key
 /// press, card reads, etc.,). They do this by creating an “event” and sending
 /// it to the CP. This module is responsible to handling such events though
-/// OsdpEvent.
+/// Event.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum OsdpEvent {
+pub enum Event {
     /// Event that describes card read activity on the PD
-    CardRead(OsdpEventCardRead),
+    CardRead(CardRead),
 
     /// Event to describe a key press activity on the PD
-    KeyPress(OsdpEventKeyPress),
+    KeyPress(KeyPress),
 
     /// Event to transport a Manufacturer specific command’s response
-    MfgReply(OsdpEventMfgReply),
+    MfgReply(MfgReply),
 
     /// Event to describe a input/output/tamper/power status change
-    Status(OsdpStatusReport),
+    Status(StatusReport),
 }
 
-impl From<OsdpEvent> for libosdp_sys::osdp_event {
-    fn from(value: OsdpEvent) -> Self {
+impl From<Event> for libosdp_sys::osdp_event {
+    fn from(value: Event) -> Self {
         match value {
-            OsdpEvent::CardRead(e) => libosdp_sys::osdp_event {
+            Event::CardRead(e) => libosdp_sys::osdp_event {
                 _node: unsafe { core::mem::zeroed() },
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_CARDREAD,
                 flags: 0,
@@ -368,7 +368,7 @@ impl From<OsdpEvent> for libosdp_sys::osdp_event {
                     cardread: e.clone().into(),
                 },
             },
-            OsdpEvent::KeyPress(e) => libosdp_sys::osdp_event {
+            Event::KeyPress(e) => libosdp_sys::osdp_event {
                 _node: unsafe { core::mem::zeroed() },
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_KEYPRESS,
                 flags: 0,
@@ -376,7 +376,7 @@ impl From<OsdpEvent> for libosdp_sys::osdp_event {
                     keypress: e.clone().into(),
                 },
             },
-            OsdpEvent::MfgReply(e) => libosdp_sys::osdp_event {
+            Event::MfgReply(e) => libosdp_sys::osdp_event {
                 _node: unsafe { core::mem::zeroed() },
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_MFGREP,
                 flags: 0,
@@ -384,7 +384,7 @@ impl From<OsdpEvent> for libosdp_sys::osdp_event {
                     mfgrep: e.clone().into(),
                 },
             },
-            OsdpEvent::Status(e) => libosdp_sys::osdp_event {
+            Event::Status(e) => libosdp_sys::osdp_event {
                 _node: unsafe { core::mem::zeroed() },
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_STATUS,
                 flags: 0,
@@ -394,24 +394,24 @@ impl From<OsdpEvent> for libosdp_sys::osdp_event {
     }
 }
 
-impl TryFrom<libosdp_sys::osdp_event> for OsdpEvent {
+impl TryFrom<libosdp_sys::osdp_event> for Event {
     type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_event) -> Result<Self> {
         match value.type_ {
             libosdp_sys::osdp_event_type_OSDP_EVENT_CARDREAD => {
                 let data = unsafe { value.__bindgen_anon_1.cardread.try_into() }?;
-                Ok(OsdpEvent::CardRead(data))
+                Ok(Event::CardRead(data))
             }
             libosdp_sys::osdp_event_type_OSDP_EVENT_KEYPRESS => {
-                Ok(OsdpEvent::KeyPress(unsafe { value.__bindgen_anon_1.keypress.into() }))
+                Ok(Event::KeyPress(unsafe { value.__bindgen_anon_1.keypress.into() }))
             }
             libosdp_sys::osdp_event_type_OSDP_EVENT_MFGREP => {
-                Ok(OsdpEvent::MfgReply(unsafe { value.__bindgen_anon_1.mfgrep.into() }))
+                Ok(Event::MfgReply(unsafe { value.__bindgen_anon_1.mfgrep.into() }))
             }
             libosdp_sys::osdp_event_type_OSDP_EVENT_STATUS => {
                 let data = unsafe { value.__bindgen_anon_1.status.try_into() }?;
-                Ok(OsdpEvent::Status(data))
+                Ok(Event::Status(data))
             }
             _ => Err(Error::Malformed("event type")),
         }
@@ -420,7 +420,7 @@ impl TryFrom<libosdp_sys::osdp_event> for OsdpEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::OsdpEventCardRead;
+    use super::CardRead;
     use libosdp_sys::{
         osdp_event_cardread, osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_UNSPECIFIED,
         osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_WIEGAND,
@@ -428,7 +428,7 @@ mod tests {
 
     #[test]
     fn test_event_cardread() {
-        let event = OsdpEventCardRead::new_raw(vec![0x55, 0xAA]);
+        let event = CardRead::new_raw(vec![0x55, 0xAA]);
         let event_struct: osdp_event_cardread = event.clone().into();
 
         assert_eq!(event_struct.length, 2 * 8);
@@ -442,7 +442,7 @@ mod tests {
 
         assert_eq!(event, event_struct.try_into().unwrap());
 
-        let event = OsdpEventCardRead::new_wiegand(15, vec![0x55, 0xAA]).unwrap();
+        let event = CardRead::new_wiegand(15, vec![0x55, 0xAA]).unwrap();
         let event_struct: osdp_event_cardread = event.clone().into();
 
         assert_eq!(event_struct.length, 15);

@@ -7,7 +7,7 @@
 //! (PD) on the OSDP bus. It can send commands to and receive events from PDs.
 
 use crate::{
-    file::OsdpFileOps, Channel, Error, OsdpCommand, OsdpEvent, OsdpFlag, PdCapability, PdId,
+    file::FileOps, Channel, Error, Command, Event, Flag, PdCapability, PdId,
     PdInfoBuilder,
 };
 use crate::ffi::{
@@ -81,7 +81,7 @@ impl ControlPanelBuilder {
 
     /// Build the [`ControlPanel`] instance.
     pub fn build(self) -> Result<ControlPanel> {
-        let info: Vec<crate::OsdpPdInfoHandle> =
+        let info: Vec<crate::PdInfoHandle> =
             self.pd_info.into_iter().map(|pd| pd.build().into()).collect();
         let channel = OwnedChannel::new(self.channel);
         let raw = channel.as_raw();
@@ -134,8 +134,8 @@ impl ControlPanel {
         unsafe { libosdp_sys::osdp_cp_refresh(self.ctx) }
     }
 
-    /// Send [`OsdpCommand`] to `pd`.
-    pub fn send_command(&mut self, pd: PdIndex, cmd: OsdpCommand) -> Result<()> {
+    /// Send [`Command`] to `pd`.
+    pub fn send_command(&mut self, pd: PdIndex, cmd: Command) -> Result<()> {
         let cmd = Box::into_raw(Box::new(libosdp_sys::osdp_cmd::from(cmd)));
         let rc = unsafe { libosdp_sys::osdp_cp_submit_command(self.ctx, pd.as_c(), cmd) };
         if rc < 0 {
@@ -159,7 +159,7 @@ impl ControlPanel {
     /// ```
     pub fn set_event_callback<F>(&mut self, closure: F)
     where
-        F: FnMut(PdIndex, OsdpEvent) -> i32 + Send + 'static,
+        F: FnMut(PdIndex, Event) -> i32 + Send + 'static,
     {
         let callback = OwnedCallback::<CpEventCallback>::new(Box::new(closure));
         unsafe {
@@ -195,14 +195,14 @@ impl ControlPanel {
         }
     }
 
-    /// Set [`OsdpFlag`] for `pd`.
+    /// Set [`Flag`] for `pd`.
     ///
     /// # Panics
     ///
     /// Panics when LibOSDP refuses the change: setting
-    /// [`OsdpFlag::InstallMode`], clearing [`OsdpFlag::EnforceSecure`], or
-    /// setting [`OsdpFlag::EnforceSecure`] on a PD without an SCBK.
-    pub fn set_flag(&mut self, pd: PdIndex, flags: OsdpFlag, value: bool) {
+    /// [`Flag::InstallMode`], clearing [`Flag::EnforceSecure`], or
+    /// setting [`Flag::EnforceSecure`] on a PD without an SCBK.
+    pub fn set_flag(&mut self, pd: PdIndex, flags: Flag, value: bool) {
         let rc =
             unsafe { libosdp_sys::osdp_cp_modify_flag(self.ctx, pd.as_c(), flags.bits(), value) };
         if rc < 0 {
@@ -242,9 +242,9 @@ impl ControlPanel {
         }
     }
 
-    /// Register a file operations handler for `pd`. See [`crate::OsdpFileOps`]
+    /// Register a file operations handler for `pd`. See [`crate::FileOps`]
     /// trait documentation for more details.
-    pub fn register_file_ops(&mut self, pd: PdIndex, fops: Box<dyn OsdpFileOps>) -> Result<()> {
+    pub fn register_file_ops(&mut self, pd: PdIndex, fops: Box<dyn FileOps>) -> Result<()> {
         let fops = OwnedFileOps::new(fops);
         let raw = fops.as_raw();
         let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, pd.as_c(), &raw) };

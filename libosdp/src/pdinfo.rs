@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{Error, OsdpFlag, PdCapability, PdId};
+use crate::{Error, Flag, PdCapability, PdId};
 use alloc::{boxed::Box, ffi::CString, string::String, vec::Vec};
 use core::ops::Deref;
 
@@ -13,7 +13,7 @@ pub struct PdInfo {
     name: CString,
     address: i32,
     baud_rate: i32,
-    flags: OsdpFlag,
+    flags: Flag,
     id: PdId,
     cap: Vec<libosdp_sys::osdp_pd_cap>,
     scbk: Option<[u8; 16]>,
@@ -63,17 +63,17 @@ impl PdInfo {
         self.baud_rate
     }
 
-    /// Gets the PDs [`OsdpFlag`]
+    /// Gets the PDs [`Flag`]
     /// Used to modify the way the context is set up
     ///
     /// # Example
     /// ```
-    /// # use libosdp::{OsdpFlag, PdInfoBuilder};
-    /// let pd = PdInfoBuilder::new().flag(OsdpFlag::EnforceSecure).build();
-    /// assert_eq!(pd.flag(), OsdpFlag::EnforceSecure);
+    /// # use libosdp::{Flag, PdInfoBuilder};
+    /// let pd = PdInfoBuilder::new().flag(Flag::EnforceSecure).build();
+    /// assert_eq!(pd.flag(), Flag::EnforceSecure);
     /// ```
     #[must_use]
-    pub fn flag(&self) -> OsdpFlag {
+    pub fn flag(&self) -> Flag {
         self.flags
     }
 
@@ -113,7 +113,7 @@ impl PdInfo {
 
     /// Get a PDs secure channel key.
     /// Without a key the secure channel is disabled; set
-    /// [`OsdpFlag::InstallMode`] to bring it up on SCBK-D.
+    /// [`Flag::InstallMode`] to bring it up on SCBK-D.
     ///
     /// # Example
     /// ```
@@ -139,7 +139,7 @@ pub struct PdInfoBuilder {
     name: Option<CString>,
     address: i32,
     baud_rate: i32,
-    flags: OsdpFlag,
+    flags: Flag,
     id: PdId,
     cap: Vec<libosdp_sys::osdp_pd_cap>,
     scbk: Option<[u8; 16]>,
@@ -185,7 +185,7 @@ impl PdInfoBuilder {
     }
 
     /// Set flags for the PD; used to modify the way the context is setup
-    pub fn flag(mut self, flag: OsdpFlag) -> PdInfoBuilder {
+    pub fn flag(mut self, flag: Flag) -> PdInfoBuilder {
         self.flags.set(flag, true);
         self
     }
@@ -216,7 +216,7 @@ impl PdInfoBuilder {
     }
 
     /// Set secure channel key. Without a key the secure channel is
-    /// disabled; set [`OsdpFlag::InstallMode`] to bring it up on SCBK-D.
+    /// disabled; set [`Flag::InstallMode`] to bring it up on SCBK-D.
     pub fn secure_channel_key(mut self, key: [u8; 16]) -> PdInfoBuilder {
         self.scbk = Some(key);
         self
@@ -248,9 +248,9 @@ impl PdInfoBuilder {
 }
 
 #[repr(transparent)]
-pub(crate) struct OsdpPdInfoHandle(pub libosdp_sys::osdp_pd_info_t);
+pub(crate) struct PdInfoHandle(pub libosdp_sys::osdp_pd_info_t);
 
-impl Deref for OsdpPdInfoHandle {
+impl Deref for PdInfoHandle {
     type Target = libosdp_sys::osdp_pd_info_t;
 
     fn deref(&self) -> &Self::Target {
@@ -258,8 +258,8 @@ impl Deref for OsdpPdInfoHandle {
     }
 }
 
-impl From<PdInfo> for OsdpPdInfoHandle {
-    fn from(info: PdInfo) -> OsdpPdInfoHandle {
+impl From<PdInfo> for PdInfoHandle {
+    fn from(info: PdInfo) -> PdInfoHandle {
         let scbk = if let Some(key) = info.scbk {
             Box::into_raw(Box::new(key)) as *mut _
         } else {
@@ -277,7 +277,7 @@ impl From<PdInfo> for OsdpPdInfoHandle {
         } else {
             core::ptr::null_mut::<libosdp_sys::osdp_pd_cap>()
         };
-        OsdpPdInfoHandle(libosdp_sys::osdp_pd_info_t {
+        PdInfoHandle(libosdp_sys::osdp_pd_info_t {
             name: info.name.clone().into_raw(),
             baud_rate: info.baud_rate as u32,
             address: info.address,
@@ -289,7 +289,7 @@ impl From<PdInfo> for OsdpPdInfoHandle {
     }
 }
 
-impl Drop for OsdpPdInfoHandle {
+impl Drop for PdInfoHandle {
     fn drop(&mut self) {
         unsafe {
             let info = self.0;

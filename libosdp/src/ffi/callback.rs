@@ -3,11 +3,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{OsdpCommand, OsdpEvent, PdIndex};
+use crate::{Command, Event, PdIndex};
 use core::ffi::c_void;
 
-pub(crate) type CpEventCallback = alloc::boxed::Box<dyn FnMut(PdIndex, OsdpEvent) -> i32 + Send>;
-pub(crate) type PdCommandCallback = alloc::boxed::Box<dyn FnMut(&mut OsdpCommand) -> i32 + Send>;
+pub(crate) type CpEventCallback = alloc::boxed::Box<dyn FnMut(PdIndex, Event) -> i32 + Send>;
+pub(crate) type PdCommandCallback = alloc::boxed::Box<dyn FnMut(&mut Command) -> i32 + Send>;
 
 pub(crate) unsafe extern "C" fn cp_event_trampoline(
     data: *mut c_void,

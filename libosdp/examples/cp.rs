@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use libosdp::{Channel, ChannelError, Error, OsdpFlag, PdInfoBuilder};
+use libosdp::{Channel, ChannelError, Error, Flag, PdInfoBuilder};
 use std::{env, thread, time::Duration};
 
 struct OsdpChannel;
@@ -61,7 +61,7 @@ fn main() -> Result<(), Error> {
         .name("PD 101")?
         .address(101)?
         .baud_rate(115200)?
-        .flag(OsdpFlag::EnforceSecure)
+        .flag(Flag::EnforceSecure)
         .secure_channel_key(pd_0_key);
     let mut builder = libosdp::ControlPanelBuilder::new(Box::new(channel));
     builder.add_pd(pd_0)?;

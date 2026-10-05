@@ -13,7 +13,7 @@
 //! to the CP.
 
 use crate::{
-    Channel, Error, OsdpCommand, OsdpEvent, OsdpFileOps, PdCapability, PdInfoBuilder,
+    Channel, Error, Command, Event, FileOps, PdCapability, PdInfoBuilder,
 };
 use crate::ffi::{
     callback::{pd_command_trampoline, OwnedCallback, PdCommandCallback},
@@ -49,7 +49,7 @@ impl PeripheralDevice {
         unsafe { libosdp_sys::osdp_set_log_callback(Some(pd_log_handler)) };
         let channel = OwnedChannel::new(channel);
         let mut raw = channel.as_raw();
-        let info: crate::OsdpPdInfoHandle = info.build().into();
+        let info: crate::PdInfoHandle = info.build().into();
         let ctx = unsafe { libosdp_sys::osdp_pd_setup(&mut raw, &*info) };
         if ctx.is_null() {
             return Err(Error::Setup);
@@ -91,9 +91,9 @@ impl PeripheralDevice {
         let _ = unsafe { libosdp_sys::osdp_pd_flush_events(self.ctx) };
     }
 
-    /// Queue an [`OsdpEvent`] for this PD. This will be delivered to CP in
+    /// Queue an [`Event`] for this PD. This will be delivered to CP in
     /// the next POLL.
-    pub fn notify_event(&mut self, event: OsdpEvent) -> Result<()> {
+    pub fn notify_event(&mut self, event: Event) -> Result<()> {
         let event = Box::into_raw(Box::new(libosdp_sys::osdp_event::from(event)));
         let rc = unsafe { libosdp_sys::osdp_pd_submit_event(self.ctx, event) };
         if rc < 0 {
@@ -118,7 +118,7 @@ impl PeripheralDevice {
     /// ```
     pub fn set_command_callback<F>(&mut self, closure: F)
     where
-        F: FnMut(&mut OsdpCommand) -> i32 + Send + 'static,
+        F: FnMut(&mut Command) -> i32 + Send + 'static,
     {
         let callback = OwnedCallback::<PdCommandCallback>::new(Box::new(closure));
         unsafe {
@@ -160,9 +160,9 @@ impl PeripheralDevice {
         }
     }
 
-    /// Register a file operations handler for PD. See [`crate::OsdpFileOps`]
+    /// Register a file operations handler for PD. See [`crate::FileOps`]
     /// trait documentation for more details.
-    pub fn register_file_ops(&mut self, fops: Box<dyn OsdpFileOps>) -> Result<()> {
+    pub fn register_file_ops(&mut self, fops: Box<dyn FileOps>) -> Result<()> {
         let fops = OwnedFileOps::new(fops);
         let raw = fops.as_raw();
         let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, 0, &raw) };

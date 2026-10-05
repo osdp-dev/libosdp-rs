@@ -9,7 +9,7 @@ use std::{
 };
 
 use libosdp::{
-    ControlPanel, ControlPanelBuilder, OsdpCommand, OsdpEvent, PdCapEntity, PdCapability,
+    ControlPanel, ControlPanelBuilder, Command, Event, PdCapEntity, PdCapability,
     PdIndex, PdInfoBuilder, PeripheralDevice,
 };
 type Result<T> = core::result::Result<T, libosdp::Error>;
@@ -17,7 +17,7 @@ type Result<T> = core::result::Result<T, libosdp::Error>;
 pub struct CpDevice {
     dev: Arc<Mutex<ControlPanel>>,
     #[allow(unused)] // false positive, it is used!
-    pub receiver: Receiver<(PdIndex, OsdpEvent)>,
+    pub receiver: Receiver<(PdIndex, Event)>,
     pub pd: PdIndex,
 }
 
@@ -37,7 +37,7 @@ impl CpDevice {
         let mut builder = ControlPanelBuilder::new(bus);
         let pd = builder.add_pd(pd_0)?;
         let cp = builder.build()?;
-        let (event_tx, event_rx) = std::sync::mpsc::channel::<(PdIndex, OsdpEvent)>();
+        let (event_tx, event_rx) = std::sync::mpsc::channel::<(PdIndex, Event)>();
 
         let dev = Arc::new(Mutex::new(cp));
         let dev_clone = dev.clone();
@@ -69,7 +69,7 @@ impl CpDevice {
 
 pub struct PdDevice {
     dev: Arc<Mutex<PeripheralDevice>>,
-    pub receiver: Receiver<OsdpCommand>,
+    pub receiver: Receiver<Command>,
 }
 
 impl PdDevice {
@@ -89,7 +89,7 @@ impl PdDevice {
             .capability(PdCapability::LedControl(PdCapEntity::new(1, 1)))
             .secure_channel_key(key);
         let pd = PeripheralDevice::new(pd_info, bus)?;
-        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<OsdpCommand>();
+        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Command>();
         let dev = Arc::new(Mutex::new(pd));
         let dev_clone = dev.clone();
         let _ = thread::Builder::new()
