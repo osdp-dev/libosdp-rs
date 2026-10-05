@@ -29,6 +29,11 @@ Release subject ## TODO
   event ended: Ok, or a CompletionError (Failed, Flushed, Aborted).
   flush_events becomes flush, on the CP too, and returns how many
   submissions it dropped
+- cp: Queue PD events during refresh() and hand them over through
+  next_event(), replacing set_event_callback. The queue holds 32
+  events unless ControlPanelBuilder::event_queue_capacity says
+  otherwise; when it is full, newer events are dropped and counted by
+  dropped_events()
 
 ## Enhancements
 

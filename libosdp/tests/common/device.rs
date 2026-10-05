@@ -9,7 +9,7 @@ use std::{
 };
 
 use libosdp::{
-    ControlPanel, ControlPanelBuilder, Command, Event, PdCapEntity, PdCapability,
+    ControlPanel, ControlPanelBuilder, Command, CpEvent, Event, PdCapEntity, PdCapability,
     PdIndex, PdInfoBuilder, PeripheralDevice,
 };
 type Result<T> = core::result::Result<T, libosdp::Error>;
@@ -46,12 +46,14 @@ impl CpDevice {
             .spawn(move || {
                 let dev = dev_clone;
                 let sender = event_tx;
-                dev.lock().unwrap().set_event_callback(move |pd, event| {
-                    sender.send((pd, event)).expect("CP event send");
-                    0
-                });
                 loop {
-                    dev.lock().unwrap().refresh();
+                    {
+                        let cp = dev.lock().unwrap();
+                        cp.refresh();
+                        while let Some((pd, CpEvent::Event(event))) = cp.next_event() {
+                            sender.send((pd, event)).expect("CP event send");
+                        }
+                    }
                     thread::sleep(time::Duration::from_millis(10));
                 }
             });

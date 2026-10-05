@@ -68,6 +68,9 @@ fn main() -> Result<(), Error> {
     let cp = builder.build()?;
     loop {
         cp.refresh();
+        while let Some((pd, event)) = cp.next_event() {
+            println!("PD {pd}: {event:?}");
+        }
         thread::sleep(Duration::from_millis(50));
     }
 }

@@ -3,10 +3,10 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{Command, Event, PdIndex};
+use crate::{queue::DrainQueue, Command, CpEvent, PdIndex};
 use core::{cell::Cell, ffi::c_void};
 
-pub(crate) type CpEventCallback = alloc::boxed::Box<dyn FnMut(PdIndex, Event) -> i32 + Send>;
+pub(crate) type CpEventQueue = DrainQueue<(PdIndex, CpEvent)>;
 pub(crate) type PdCommandCallback = alloc::boxed::Box<dyn FnMut(&mut Command) -> i32 + Send>;
 
 /// The application's current callback. LibOSDP is given a pointer to the
@@ -41,11 +41,12 @@ pub(crate) unsafe extern "C" fn cp_event_trampoline(
     pd: i32,
     event: *mut libosdp_sys::osdp_event,
 ) -> i32 {
-    let slot = unsafe { &*(data as *const CallbackSlot<CpEventCallback>) };
+    let queue = unsafe { &*(data as *const CpEventQueue) };
     match unsafe { core::ptr::read_unaligned(event).try_into() } {
-        Ok(event) => slot
-            .call(|callback| callback(PdIndex::new(pd as u8), event))
-            .unwrap_or(0),
+        Ok(event) => {
+            queue.push((PdIndex::new(pd as u8), CpEvent::Event(event)));
+            0
+        }
         Err(_) => -1, // Failed to parse the event data -> Send NAK
     }
 }

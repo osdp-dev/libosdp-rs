@@ -9,14 +9,15 @@ mod common;
 use common::memory_channel::MemoryChannel;
 use libosdp::{
     BuzzerCommand, CardRead, Channel, ChannelError, Command, CompletionError, ControlPanel,
-    ControlPanelBuilder, Error, Event, FileError, FileOps, FileTxCommand, PdCapEntity,
-    PdCapability, PdIndex, PdInfoBuilder, PeripheralDevice, Submission,
+    ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps, FileTxCommand, KeyPress,
+    PdCapEntity, PdCapability, PdIndex, PdInfoBuilder, PeripheralDevice, Submission,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
 use std::cell::{Cell, OnceCell};
+use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 
 type Result<T> = core::result::Result<T, Error>;
@@ -83,36 +84,13 @@ fn pd_info() -> Result<PdInfoBuilder> {
 }
 
 #[test]
-fn cp_drop_frees_channel_callback_and_file_ops() -> Result<()> {
+fn cp_drop_frees_channel_and_file_ops() -> Result<()> {
     let drops = DropCounter::default();
     let mut builder = ControlPanelBuilder::new(Box::new(IdleChannel(drops.guard())));
     let pd = builder.add_pd(pd_info()?)?;
     let cp = builder.build()?;
-    let guard = drops.guard();
-    cp.set_event_callback(move |_, _| {
-        let _ = &guard;
-        0
-    });
     cp.register_file_ops(pd, Box::new(NoFiles(drops.guard())))?;
     assert_eq!(drops.count(), 0);
-    drop(cp);
-    assert_eq!(drops.count(), 3);
-    Ok(())
-}
-
-#[test]
-fn cp_replacing_callback_frees_the_old_one() -> Result<()> {
-    let drops = DropCounter::default();
-    let mut builder = ControlPanelBuilder::new(Box::new(IdleChannel(drops.guard())));
-    builder.add_pd(pd_info()?)?;
-    let cp = builder.build()?;
-    let first = drops.guard();
-    cp.set_event_callback(move |_, _| {
-        let _ = &first;
-        0
-    });
-    cp.set_event_callback(|_, _| 0);
-    assert_eq!(drops.count(), 1);
     drop(cp);
     assert_eq!(drops.count(), 2);
     Ok(())
@@ -160,6 +138,12 @@ const KEY: [u8; 16] = [
 ];
 
 fn secure_pair() -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
+    secure_pair_with_event_queue(32)
+}
+
+fn secure_pair_with_event_queue(
+    capacity: usize,
+) -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
     let (cp_bus, pd_bus) = MemoryChannel::new();
     let pd = PeripheralDevice::new(
         pd_info()?
@@ -169,7 +153,8 @@ fn secure_pair() -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
             .secure_channel_key(KEY),
         Box::new(pd_bus),
     )?;
-    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
+    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus))
+        .event_queue_capacity(NonZeroUsize::new(capacity).unwrap());
     let target = builder.add_pd(pd_info()?.secure_channel_key(KEY))?;
     let cp = builder.build()?;
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -459,5 +444,46 @@ fn pd_drop_with_events_queued_frees_them_via_aborted() -> Result<()> {
     }
     drop(pd);
     drop(cp);
+    Ok(())
+}
+
+fn refresh_until(cp: &ControlPanel, pd: &PeripheralDevice, mut done: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !done() {
+        assert!(Instant::now() < deadline, "condition never held");
+        cp.refresh();
+        pd.refresh();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn cp_hands_over_pd_events_after_refresh() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    pd.submit(card())?;
+    let mut received = Vec::new();
+    refresh_until(&cp, &pd, || {
+        while let Some(item) = cp.next_event() {
+            cp.submit(target, buzz()).unwrap();
+            received.push(item);
+        }
+        !received.is_empty()
+    });
+    assert_eq!(received, vec![(target, CpEvent::Event(card()))]);
+    Ok(())
+}
+
+#[test]
+fn full_event_queue_drops_the_newest_events() -> Result<()> {
+    let (cp, target, pd) = secure_pair_with_event_queue(2)?;
+    for key in 1..=3u8 {
+        pd.submit(Event::KeyPress(KeyPress::new(vec![key])))?;
+    }
+    refresh_until(&cp, &pd, || cp.dropped_events() == 1);
+    for key in 1..=2u8 {
+        let expected = CpEvent::Event(Event::KeyPress(KeyPress::new(vec![key])));
+        assert_eq!(cp.next_event(), Some((target, expected)));
+    }
+    assert_eq!(cp.next_event(), None);
     Ok(())
 }

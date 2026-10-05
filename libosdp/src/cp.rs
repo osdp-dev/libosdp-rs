@@ -7,22 +7,27 @@
 //! (PD) on the OSDP bus. It can send commands to and receive events from PDs.
 
 use crate::{
-    busy::Busy, file::FileOps, Channel, Error, Command, Event, Flag, PdCapability, PdId,
+    busy::Busy, file::FileOps, Channel, Command, Error, Event, Flag, PdCapability, PdId,
     PdInfoBuilder, Submission,
 };
 use crate::ffi::{
-    callback::{cp_event_trampoline, CallbackSlot, CpEventCallback, Shared},
+    callback::{cp_event_trampoline, CpEventQueue, Shared},
     channel::OwnedChannel,
     file::OwnedFileOps,
     log::cp_log_handler,
     submit::{cp_command_complete, RawSubmission},
 };
 use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
+use core::num::NonZeroUsize;
 use core::cell::{Cell, RefCell};
 
 type Result<T> = core::result::Result<T, Error>;
 
 const MAX_PDS_PER_BUS: usize = 126;
+const DEFAULT_EVENT_QUEUE_CAPACITY: NonZeroUsize = match NonZeroUsize::new(32) {
+    Some(capacity) => capacity,
+    None => unreachable!(),
+};
 
 /// A PD on a [`ControlPanel`]'s bus, handed out by
 /// [`ControlPanelBuilder::add_pd`] in the order the PDs were added. An index
@@ -54,11 +59,20 @@ impl core::fmt::Display for PdIndex {
     }
 }
 
+/// What [`ControlPanel::next_event`] hands over.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum CpEvent {
+    /// An event a PD reported.
+    Event(Event),
+}
+
 /// Builder for a [`ControlPanel`] driving the PDs on one OSDP bus.
 #[derive(Debug)]
 pub struct ControlPanelBuilder {
     channel: Box<dyn Channel>,
     pd_info: Vec<PdInfoBuilder>,
+    event_queue_capacity: NonZeroUsize,
 }
 
 impl ControlPanelBuilder {
@@ -67,7 +81,15 @@ impl ControlPanelBuilder {
         Self {
             channel,
             pd_info: Vec::new(),
+            event_queue_capacity: DEFAULT_EVENT_QUEUE_CAPACITY,
         }
+    }
+
+    /// Hold up to `capacity` events (32 by default) between two calls that
+    /// drain them; see [`ControlPanel::next_event`].
+    pub fn event_queue_capacity(mut self, capacity: NonZeroUsize) -> Self {
+        self.event_queue_capacity = capacity;
+        self
     }
 
     /// Add a PD on this bus; the returned index addresses it on the built
@@ -100,19 +122,15 @@ impl ControlPanelBuilder {
                 core::ptr::null_mut(),
             )
         };
-        let event_callback = Shared::new(CallbackSlot::new());
+        let events = Shared::new(CpEventQueue::new(self.event_queue_capacity));
         unsafe {
-            libosdp_sys::osdp_cp_set_event_callback(
-                ctx,
-                Some(cp_event_trampoline),
-                event_callback.data(),
-            )
+            libosdp_sys::osdp_cp_set_event_callback(ctx, Some(cp_event_trampoline), events.data())
         };
         Ok(ControlPanel {
             ctx,
             busy: Cell::new(false),
             channel,
-            event_callback,
+            events,
             file_ops: RefCell::new(BTreeMap::new()),
         })
     }
@@ -132,7 +150,7 @@ pub struct ControlPanel {
     busy: Cell<bool>,
     #[allow(dead_code)]
     channel: OwnedChannel,
-    event_callback: Shared<CallbackSlot<CpEventCallback>>,
+    events: Shared<CpEventQueue>,
     file_ops: RefCell<BTreeMap<PdIndex, OwnedFileOps>>,
 }
 
@@ -193,22 +211,18 @@ impl ControlPanel {
         usize::try_from(dropped).unwrap_or(0)
     }
 
-    /// Set a closure that gets called when a PD sends an event to this CP.
-    ///
-    /// The closure is moved into the context, which is `Send`, so it must be
-    /// `Send` too:
-    ///
-    /// ```compile_fail
-    /// # fn f(cp: &libosdp::ControlPanel) {
-    /// let seen = std::rc::Rc::new(std::cell::Cell::new(0));
-    /// cp.set_event_callback(move |_, _| { seen.set(seen.get() + 1); 0 });
-    /// # }
-    /// ```
-    pub fn set_event_callback<F>(&self, closure: F)
-    where
-        F: FnMut(PdIndex, Event) -> i32 + Send + 'static,
-    {
-        self.event_callback.get().replace(Box::new(closure));
+    /// Take the oldest event that PDs reported during
+    /// [`ControlPanel::refresh`]. Drain them after every refresh: once the
+    /// queue is full, newer events are dropped and counted by
+    /// [`ControlPanel::dropped_events`].
+    pub fn next_event(&self) -> Option<(PdIndex, CpEvent)> {
+        self.events.get().pop()
+    }
+
+    /// How many events were dropped because the queue was full, counted
+    /// since this context was built; it is never reset.
+    pub fn dropped_events(&self) -> usize {
+        self.events.get().dropped()
     }
 
     /// Get the [`PdId`] that `pd` reported.

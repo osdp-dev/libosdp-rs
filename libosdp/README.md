@@ -27,14 +27,17 @@ cargo add libosdp
 A simplified CP implementation:
 
 ```rust
-let pd_info = vec! [ PdInfo::new(...), ... ];
-let mut cp = ControlPanel::new(&mut pd_info)?;
-cp.set_event_callback(|pd, event| {
-    println!("Received event from {pd}: {:?}", event);
-});
+let mut builder = ControlPanelBuilder::new(Box::new(channel));
+builder.add_pd(PdInfoBuilder::new().address(101)?.baud_rate(115200)?)?;
+let cp = builder.build()?;
 loop {
     cp.refresh();
-    cp.submit(0, Command::new(...));
+    while let Some((from, event)) = cp.next_event() {
+        println!("Received event from {from}: {event:?}");
+        if let CpEvent::Event(Event::CardRead(_)) = event {
+            cp.submit(from, Command::Buzzer(...))?;
+        }
+    }
 }
 ```
 

@@ -45,7 +45,7 @@
 //!
 //! After this point, the CP context can,
 //!   - send commands to any one of the PDs (to control LEDs, Buzzers, Input/Output pins, etc.,)
-//!   - register a closure for events that are sent from a PD
+//!   - hand over, after each `refresh()`, the events that PDs sent
 //!
 //! and the PD context can,
 //!   - notify it's controlling CP about an event (card read, key press, tamper, etc.,)
@@ -78,6 +78,7 @@ mod pd;
 mod pdcap;
 mod pdid;
 mod pdinfo;
+mod queue;
 mod submit;
 
 // Re-export for convenience
@@ -91,7 +92,7 @@ pub use pdinfo::*;
 
 use alloc::{borrow::ToOwned, string::String};
 
-pub use cp::{ControlPanel, ControlPanelBuilder, PdIndex};
+pub use cp::{ControlPanel, ControlPanelBuilder, CpEvent, PdIndex};
 pub use error::{CompletionError, Error, FileError};
 pub use pd::PeripheralDevice;
 pub use submit::Submission;
