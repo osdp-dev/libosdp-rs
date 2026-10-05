@@ -5,10 +5,10 @@
 
 mod common;
 
-type Result<T> = core::result::Result<T, libosdp::OsdpError>;
+type Result<T> = core::result::Result<T, libosdp::Error>;
 
 use core::time::Duration;
-use libosdp::{OsdpCommand, OsdpCommandFileTx, OsdpError, OsdpFileOps};
+use libosdp::{FileError, OsdpCommand, OsdpCommandFileTx, OsdpFileOps};
 use rand::RngExt;
 use std::{
     cmp,
@@ -45,11 +45,8 @@ impl OsdpFileManager {
 }
 
 impl OsdpFileOps for OsdpFileManager {
-    fn open(&mut self, id: i32, read_only: bool) -> Result<usize> {
-        let path = self
-            .files
-            .get(&id)
-            .ok_or(OsdpError::FileTransfer("Invalid file ID"))?;
+    fn open(&mut self, id: i32, read_only: bool) -> core::result::Result<usize, FileError> {
+        let path = self.files.get(&id).ok_or(FileError::NotFound)?;
         log::debug!("File {:?}", path);
         let file = if read_only {
             File::open(path.as_os_str())?
@@ -61,11 +58,8 @@ impl OsdpFileOps for OsdpFileManager {
         Ok(size)
     }
 
-    fn offset_read(&self, buf: &mut [u8], off: u64) -> Result<usize> {
-        let file = self
-            .file
-            .as_ref()
-            .ok_or(OsdpError::FileTransfer("File not open"))?;
+    fn offset_read(&self, buf: &mut [u8], off: u64) -> core::result::Result<usize, FileError> {
+        let file = self.file.as_ref().ok_or(FileError::NotOpen)?;
 
         #[cfg(not(target_os = "windows"))]
         let r = file.read_at(buf, off)?;
@@ -76,11 +70,8 @@ impl OsdpFileOps for OsdpFileManager {
         Ok(r)
     }
 
-    fn offset_write(&self, buf: &[u8], off: u64) -> Result<usize> {
-        let file = self
-            .file
-            .as_ref()
-            .ok_or(OsdpError::FileTransfer("File not open"))?;
+    fn offset_write(&self, buf: &[u8], off: u64) -> core::result::Result<usize, FileError> {
+        let file = self.file.as_ref().ok_or(FileError::NotOpen)?;
 
         #[cfg(not(target_os = "windows"))]
         let r = file.write_at(buf, off)?;
@@ -91,7 +82,7 @@ impl OsdpFileOps for OsdpFileManager {
         Ok(r)
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> core::result::Result<(), FileError> {
         let _ = self.file.take().unwrap();
         Ok(())
     }

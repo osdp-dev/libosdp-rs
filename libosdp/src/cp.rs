@@ -7,7 +7,7 @@
 //! (PD) on the OSDP bus. It can send commands to and receive events from PDs.
 
 use crate::{
-    file::OsdpFileOps, Channel, OsdpCommand, OsdpError, OsdpEvent, OsdpFlag, PdCapability, PdId,
+    file::OsdpFileOps, Channel, Error, OsdpCommand, OsdpEvent, OsdpFlag, PdCapability, PdId,
     PdInfoBuilder,
 };
 use crate::ffi::{
@@ -19,7 +19,7 @@ use crate::ffi::{
 };
 use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
 
-type Result<T> = core::result::Result<T, OsdpError>;
+type Result<T> = core::result::Result<T, Error>;
 
 /// Builder for a [`ControlPanel`] driving the PDs on one OSDP bus.
 #[derive(Debug)]
@@ -46,7 +46,7 @@ impl ControlPanelBuilder {
     /// Build the [`ControlPanel`] instance.
     pub fn build(self) -> Result<ControlPanel> {
         if self.pd_info.len() > 126 {
-            return Err(OsdpError::PdInfo("max PD count exceeded"));
+            return Err(Error::InvalidArgument("more than 126 PDs on one bus"));
         }
         let info: Vec<crate::OsdpPdInfoHandle> =
             self.pd_info.into_iter().map(|pd| pd.build().into()).collect();
@@ -57,7 +57,7 @@ impl ControlPanelBuilder {
             libosdp_sys::osdp_cp_setup(&raw, info.len() as i32, info.as_ptr() as *const _)
         };
         if ctx.is_null() {
-            return Err(OsdpError::Setup);
+            return Err(Error::Setup);
         }
         unsafe {
             libosdp_sys::osdp_cp_set_command_completion_callback(
@@ -108,7 +108,7 @@ impl ControlPanel {
         let rc = unsafe { libosdp_sys::osdp_cp_submit_command(self.ctx, pd, cmd) };
         if rc < 0 {
             drop(unsafe { Box::from_raw(cmd) });
-            Err(OsdpError::Command)
+            Err(Error::Rejected)
         } else {
             Ok(())
         }
@@ -147,7 +147,7 @@ impl ControlPanel {
             unsafe { core::mem::MaybeUninit::zeroed().assume_init() };
         let rc = unsafe { libosdp_sys::osdp_cp_get_pd_id(self.ctx, pd, &mut pd_id) };
         if rc < 0 {
-            Err(OsdpError::Query("PdId"))
+            Err(Error::Rejected)
         } else {
             Ok(pd_id.into())
         }
@@ -159,7 +159,7 @@ impl ControlPanel {
         let mut cap = cap.into();
         let rc = unsafe { libosdp_sys::osdp_cp_get_capability(self.ctx, pd, &mut cap) };
         if rc < 0 {
-            Err(OsdpError::Query("capability"))
+            Err(Error::Rejected)
         } else {
             Ok(cap.try_into()?)
         }
@@ -203,7 +203,8 @@ impl ControlPanel {
 
     /// Get status of the ongoing file transfer of a PD, identified by the
     /// offset number (in PdInfo vector in [`ControlPanel::new`]). Returns
-    /// (size, offset) of the current file transfer operation.
+    /// (size, offset) of the current file transfer operation, or
+    /// [`Error::NotInProgress`] once the transfer has ended, however it ended.
     pub fn file_transfer_status(&self, pd: i32) -> Result<(i32, i32)> {
         let mut size: u32 = 0;
         let mut offset: u32 = 0;
@@ -211,7 +212,7 @@ impl ControlPanel {
             libosdp_sys::osdp_get_file_tx_status(self.ctx, pd, &mut size, &mut offset)
         };
         if rc < 0 {
-            Err(OsdpError::FileTransfer("Not not in progress"))
+            Err(Error::NotInProgress)
         } else {
             Ok((size as i32, offset as i32))
         }
@@ -224,7 +225,7 @@ impl ControlPanel {
         let raw = fops.as_raw();
         let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, pd, &raw) };
         if rc < 0 {
-            Err(OsdpError::FileTransfer("ops register"))
+            Err(Error::Rejected)
         } else {
             self.file_ops.insert(pd, fops);
             Ok(())

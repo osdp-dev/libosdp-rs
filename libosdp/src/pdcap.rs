@@ -1,12 +1,11 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use alloc::format;
 use core::str::FromStr;
 
-use crate::OsdpError;
+use crate::Error;
 
 /// PD capability entity to be used inside [`PdCapability`]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -36,33 +35,37 @@ impl PdCapEntity {
 
 // From "Compliance:10,NumItems:20" to PdCapEntry { compliance: 10, num_items: 20 }
 impl FromStr for PdCapEntity {
-    type Err = OsdpError;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (compliance, num_items);
         if let Some((compliance_str, num_items_str)) = s.split_once(',') {
             if let Some((key, val)) = compliance_str.split_once(':') {
                 if key != "Compliance" {
-                    return Err(OsdpError::Parse(format!("PdCapEntry: {s}")));
+                    return Err(Error::InvalidArgument("PdCapEntity"));
                 }
-                compliance = val.parse::<u8>().unwrap()
+                compliance = val
+                    .parse::<u8>()
+                    .map_err(|_| Error::InvalidArgument("PdCapEntity"))?
             } else {
-                return Err(OsdpError::Parse(format!("PdCapEntry: {s}")));
+                return Err(Error::InvalidArgument("PdCapEntity"));
             }
             if let Some((key, val)) = num_items_str.split_once(':') {
                 if key != "NumItems" {
-                    return Err(OsdpError::Parse(format!("PdCapEntry: {s}")));
+                    return Err(Error::InvalidArgument("PdCapEntity"));
                 }
-                num_items = val.parse::<u8>().unwrap()
+                num_items = val
+                    .parse::<u8>()
+                    .map_err(|_| Error::InvalidArgument("PdCapEntity"))?
             } else {
-                return Err(OsdpError::Parse(format!("PdCapEntry: {s}")));
+                return Err(Error::InvalidArgument("PdCapEntity"));
             }
             Ok(Self {
                 compliance,
                 num_items,
             })
         } else {
-            Err(OsdpError::Parse(format!("PdCapEntry: {s}")))
+            Err(Error::InvalidArgument("PdCapEntity"))
         }
     }
 }
@@ -153,7 +156,7 @@ pub enum PdCapability {
 
 #[rustfmt::skip]
 impl FromStr for PdCapability {
-    type Err = OsdpError;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some((cap, ent)) = s.split_once(':') {
@@ -206,10 +209,10 @@ impl FromStr for PdCapability {
                 "OsdpVersion" => {
                     Ok(PdCapability::OsdpVersion(PdCapEntity::from_str(ent)?))
                 },
-                _ => Err(OsdpError::Parse(format!("PdCapability: {s}"))),
+                _ => Err(Error::InvalidArgument("PdCapability")),
             }
         } else {
-            Err(OsdpError::Parse(format!("PdCapability: {s}")))
+            Err(Error::InvalidArgument("PdCapability"))
         }
     }
 }
@@ -421,6 +424,24 @@ impl From<PdCapability> for libosdp_sys::osdp_pd_cap {
                 compliance_level: e.compliance,
                 num_items: e.num_items,
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bad_numbers_are_invalid_arguments() {
+        for s in [
+            "LedControl:Compliance:x,NumItems:1",
+            "LedControl:Compliance:1,NumItems:256",
+        ] {
+            assert_eq!(
+                PdCapability::from_str(s),
+                Err(Error::InvalidArgument("PdCapEntity"))
+            );
         }
     }
 }

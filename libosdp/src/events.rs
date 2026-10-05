@@ -8,12 +8,12 @@
 //! etc.,). They do this by creating an "event" and sending it to the CP. This
 //! module is responsible to handling such events though [`OsdpEvent`].
 
-use crate::OsdpError;
-use alloc::{vec::Vec, format};
+use crate::Error;
+use alloc::vec::Vec;
 
 use super::ConvertEndian;
 
-type Result<T> = core::result::Result<T, OsdpError>;
+type Result<T> = core::result::Result<T, Error>;
 
 #[cfg(feature = "defmt")]
 use defmt::panic;
@@ -33,7 +33,7 @@ pub enum OsdpCardFormats {
 }
 
 impl TryFrom<libosdp_sys::osdp_event_cardread_format_e> for OsdpCardFormats {
-    type Error = OsdpError;
+    type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_event_cardread_format_e) -> Result<Self> {
         match value {
@@ -43,7 +43,7 @@ impl TryFrom<libosdp_sys::osdp_event_cardread_format_e> for OsdpCardFormats {
             libosdp_sys::osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_WIEGAND => {
                 Ok(OsdpCardFormats::Wiegand)
             }
-            cf => Err(OsdpError::Parse(format!("Unknown card format ({cf})").into())),
+            _ => Err(Error::Malformed("card format")),
         }
     }
 }
@@ -108,7 +108,7 @@ impl OsdpEventCardRead {
     /// Create a Wiegand card read event for self and direction set to forward
     pub fn new_wiegand(nr_bits: usize, data: Vec<u8>) -> Result<Self> {
         if nr_bits > data.len() * 8 {
-            return Err(OsdpError::Command);
+            return Err(Error::InvalidArgument("more Wiegand bits than data"));
         }
         Ok(Self {
             reader_no: 0,
@@ -121,7 +121,7 @@ impl OsdpEventCardRead {
 }
 
 impl TryFrom<libosdp_sys::osdp_event_cardread> for OsdpEventCardRead {
-    type Error = OsdpError;
+    type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_event_cardread) -> Result<Self> {
         let format = value.format.try_into()?;
@@ -253,7 +253,7 @@ pub enum OsdpStatusReportType {
 }
 
 impl TryFrom<libosdp_sys::osdp_status_report_type> for OsdpStatusReportType {
-    type Error = OsdpError;
+    type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_status_report_type) -> Result<Self> {
         match value {
@@ -269,7 +269,7 @@ impl TryFrom<libosdp_sys::osdp_status_report_type> for OsdpStatusReportType {
             libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_LOCAL => {
                 Ok(OsdpStatusReportType::Local)
             }
-            rt => Err(OsdpError::Parse(format!("Unknown report type ({rt})").into())),
+            _ => Err(Error::Malformed("status report type")),
         }
     }
 }
@@ -315,7 +315,7 @@ pub struct OsdpStatusReport {
 }
 
 impl TryFrom<libosdp_sys::osdp_status_report> for OsdpStatusReport {
-    type Error = OsdpError;
+    type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_status_report) -> Result<Self> {
         Ok(OsdpStatusReport {
@@ -395,7 +395,7 @@ impl From<OsdpEvent> for libosdp_sys::osdp_event {
 }
 
 impl TryFrom<libosdp_sys::osdp_event> for OsdpEvent {
-    type Error = OsdpError;
+    type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_event) -> Result<Self> {
         match value.type_ {
@@ -413,7 +413,7 @@ impl TryFrom<libosdp_sys::osdp_event> for OsdpEvent {
                 let data = unsafe { value.__bindgen_anon_1.status.try_into() }?;
                 Ok(OsdpEvent::Status(data))
             }
-            et => Err(OsdpError::Parse(format!("Unknown event ({et})").into())),
+            _ => Err(Error::Malformed("event type")),
         }
     }
 }

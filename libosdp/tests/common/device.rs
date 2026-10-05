@@ -12,7 +12,7 @@ use libosdp::{
     ControlPanel, ControlPanelBuilder, OsdpCommand, OsdpEvent, PdCapEntity, PdCapability,
     PdInfoBuilder, PeripheralDevice,
 };
-type Result<T> = core::result::Result<T, libosdp::OsdpError>;
+type Result<T> = core::result::Result<T, libosdp::Error>;
 
 pub struct CpDevice {
     dev: Arc<Mutex<ControlPanel>>,

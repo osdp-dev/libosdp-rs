@@ -9,7 +9,7 @@ mod common;
 use common::memory_channel::MemoryChannel;
 use libosdp::{
     Channel, ChannelError, ControlPanel, ControlPanelBuilder, OsdpCommand, OsdpCommandBuzzer,
-    OsdpError, OsdpFileOps, PdCapEntity, PdCapability, PdInfoBuilder, PeripheralDevice,
+    Error, FileError, OsdpFileOps, PdCapEntity, PdCapability, PdInfoBuilder, PeripheralDevice,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -17,7 +17,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-type Result<T> = core::result::Result<T, OsdpError>;
+type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Clone, Default)]
 struct DropCounter(Arc<AtomicUsize>);
@@ -62,16 +62,16 @@ impl Channel for IdleChannel {
 struct NoFiles(#[allow(dead_code)] DropGuard);
 
 impl OsdpFileOps for NoFiles {
-    fn open(&mut self, _: i32, _: bool) -> Result<usize> {
-        Err(OsdpError::FileTransfer("none"))
+    fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, FileError> {
+        Err(FileError::NotFound)
     }
-    fn offset_read(&self, _: &mut [u8], _: u64) -> Result<usize> {
+    fn offset_read(&self, _: &mut [u8], _: u64) -> core::result::Result<usize, FileError> {
         Ok(0)
     }
-    fn offset_write(&self, _: &[u8], _: u64) -> Result<usize> {
+    fn offset_write(&self, _: &[u8], _: u64) -> core::result::Result<usize, FileError> {
         Ok(0)
     }
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> core::result::Result<(), FileError> {
         Ok(())
     }
 }

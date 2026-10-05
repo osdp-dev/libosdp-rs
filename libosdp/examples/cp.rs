@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use libosdp::{Channel, ChannelError, OsdpError, OsdpFlag, PdInfoBuilder};
+use libosdp::{Channel, ChannelError, Error, OsdpFlag, PdInfoBuilder};
 use std::{env, thread, time::Duration};
 
 struct OsdpChannel;
@@ -42,7 +42,7 @@ impl Channel for OsdpChannel {
     }
 }
 
-fn main() -> Result<(), OsdpError> {
+fn main() -> Result<(), Error> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .format_target(false)

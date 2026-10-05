@@ -7,13 +7,13 @@
 //! are specified by OSDP specification. This module is responsible to handling
 //! such commands though [`OsdpCommand`].
 
-use crate::OsdpError;
+use crate::Error;
 use crate::OsdpStatusReport;
 use alloc::vec::Vec;
 
 use super::ConvertEndian;
 
-type Result<T> = core::result::Result<T, OsdpError>;
+type Result<T> = core::result::Result<T, Error>;
 
 /// LED Colors as specified in OSDP for the on_color/off_color parameters.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -611,7 +611,7 @@ impl From<OsdpCommand> for libosdp_sys::osdp_cmd {
 }
 
 impl TryFrom<libosdp_sys::osdp_cmd> for OsdpCommand {
-    type Error = OsdpError;
+    type Error = Error;
 
     fn try_from(value: libosdp_sys::osdp_cmd) -> Result<Self> {
         match value.id {
@@ -646,7 +646,7 @@ impl TryFrom<libosdp_sys::osdp_cmd> for OsdpCommand {
                 let data = unsafe { value.__bindgen_anon_1.status.try_into() }?;
                 Ok(OsdpCommand::Status(data))
             }
-            _ => Err(OsdpError::Parse("Unknown event".into())),
+            _ => Err(Error::Malformed("command id")),
         }
     }
 }

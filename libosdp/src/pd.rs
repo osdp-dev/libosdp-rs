@@ -13,7 +13,7 @@
 //! to the CP.
 
 use crate::{
-    Channel, OsdpCommand, OsdpError, OsdpEvent, OsdpFileOps, PdCapability, PdInfoBuilder,
+    Channel, Error, OsdpCommand, OsdpEvent, OsdpFileOps, PdCapability, PdInfoBuilder,
 };
 use crate::ffi::{
     callback::{pd_command_trampoline, OwnedCallback, PdCommandCallback},
@@ -24,7 +24,7 @@ use crate::ffi::{
 };
 use alloc::{boxed::Box, vec::Vec};
 
-type Result<T> = core::result::Result<T, OsdpError>;
+type Result<T> = core::result::Result<T, Error>;
 
 /// OSDP Peripheral Device (PD) context
 pub struct PeripheralDevice {
@@ -52,7 +52,7 @@ impl PeripheralDevice {
         let info: crate::OsdpPdInfoHandle = info.build().into();
         let ctx = unsafe { libosdp_sys::osdp_pd_setup(&mut raw, &*info) };
         if ctx.is_null() {
-            return Err(OsdpError::Setup);
+            return Err(Error::Setup);
         }
         unsafe {
             libosdp_sys::osdp_pd_set_event_completion_callback(
@@ -98,7 +98,7 @@ impl PeripheralDevice {
         let rc = unsafe { libosdp_sys::osdp_pd_submit_event(self.ctx, event) };
         if rc < 0 {
             drop(unsafe { Box::from_raw(event) });
-            Err(OsdpError::Event)
+            Err(Error::Rejected)
         } else {
             Ok(())
         }
@@ -148,7 +148,8 @@ impl PeripheralDevice {
         buf != 0
     }
 
-    /// Get status of the ongoing file transfer of PD
+    /// Get status of the ongoing file transfer of PD as (size, offset), or
+    /// [`Error::NotInProgress`] once the transfer has ended, however it ended.
     pub fn file_transfer_status(&self) -> Result<(i32, i32)> {
         let mut size: u32 = 0;
         let mut offset: u32 = 0;
@@ -156,7 +157,7 @@ impl PeripheralDevice {
             libosdp_sys::osdp_get_file_tx_status(self.ctx, 0, &mut size, &mut offset)
         };
         if rc < 0 {
-            Err(OsdpError::FileTransfer("Not not in progress"))
+            Err(Error::NotInProgress)
         } else {
             Ok((size as i32, offset as i32))
         }
@@ -169,7 +170,7 @@ impl PeripheralDevice {
         let raw = fops.as_raw();
         let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, 0, &raw) };
         if rc < 0 {
-            Err(OsdpError::FileTransfer("ops register"))
+            Err(Error::Rejected)
         } else {
             self.file_ops = Some(fops);
             Ok(())

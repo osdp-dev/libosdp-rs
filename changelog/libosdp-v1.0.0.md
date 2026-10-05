@@ -6,6 +6,13 @@ release_version: v1.0.0
 
 Release subject ## TODO
 
+## Breaking changes
+
+- error: Replace OsdpError with Error, whose variants say what went
+  wrong (Setup, InvalidArgument, Rejected, NotInProgress, TooLong,
+  Malformed, Channel) rather than which call failed. FileOps
+  implementations return the new FileError
+
 ## Enhancements
 
 - ## TODO

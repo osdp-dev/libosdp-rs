@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{OsdpError, OsdpFlag, PdCapability, PdId};
+use crate::{Error, OsdpFlag, PdCapability, PdId};
 use alloc::{boxed::Box, ffi::CString, string::String, vec::Vec};
 use core::ops::Deref;
 
@@ -153,24 +153,24 @@ impl PdInfoBuilder {
 
     /// Set PD name; a user provided name for this PD (log messages include this
     /// name defaults to pd-<address>)
-    pub fn name(mut self, name: &str) -> Result<PdInfoBuilder, OsdpError> {
-        let name = CString::new(name).map_err(|_| OsdpError::PdInfoBuilder("invalid name"))?;
+    pub fn name(mut self, name: &str) -> Result<PdInfoBuilder, Error> {
+        let name = CString::new(name).map_err(|_| Error::InvalidArgument("PD name contains a NUL"))?;
         self.name = Some(name);
         Ok(self)
     }
 
     /// Set 7 bit PD address; the special address 0x7F is used for broadcast. So
     /// there can be 2^7-1 valid addresses on a bus.
-    pub fn address(mut self, address: i32) -> Result<PdInfoBuilder, OsdpError> {
+    pub fn address(mut self, address: i32) -> Result<PdInfoBuilder, Error> {
         if address < 0 || address > 126 {
-            return Err(OsdpError::PdInfoBuilder("invalid address"));
+            return Err(Error::InvalidArgument("PD address outside 0-126"));
         }
         self.address = address;
         Ok(self)
     }
 
     /// Set baud rate; can be one of `9600`/`19200`/`38400`/`57600`/`115200`/`230400`
-    pub fn baud_rate(mut self, baud_rate: i32) -> Result<PdInfoBuilder, OsdpError> {
+    pub fn baud_rate(mut self, baud_rate: i32) -> Result<PdInfoBuilder, Error> {
         if baud_rate != 9600
             && baud_rate != 19200
             && baud_rate != 38400
@@ -178,7 +178,7 @@ impl PdInfoBuilder {
             && baud_rate != 115200
             && baud_rate != 230400
         {
-            return Err(OsdpError::PdInfoBuilder("invalid baud rate"));
+            return Err(Error::InvalidArgument("unsupported baud rate"));
         }
         self.baud_rate = baud_rate;
         Ok(self)

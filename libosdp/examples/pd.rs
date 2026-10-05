@@ -1,10 +1,10 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
 use libosdp::{
-    Channel, ChannelError, OsdpError, OsdpFlag, PdCapEntity, PdCapability, PdInfoBuilder,
+    Channel, ChannelError, Error, OsdpFlag, PdCapEntity, PdCapability, PdInfoBuilder,
 };
 use std::{thread, time::Duration};
 
@@ -44,7 +44,7 @@ impl Channel for OsdpChannel {
     }
 }
 
-fn main() -> Result<(), OsdpError> {
+fn main() -> Result<(), Error> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .format_target(false)

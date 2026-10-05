@@ -133,16 +133,16 @@ mod tests {
     struct FailingRead;
 
     impl OsdpFileOps for FailingRead {
-        fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, crate::OsdpError> {
+        fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, crate::FileError> {
             Ok(0)
         }
-        fn offset_read(&self, _: &mut [u8], _: u64) -> core::result::Result<usize, crate::OsdpError> {
-            Err(crate::OsdpError::FileTransfer("read"))
+        fn offset_read(&self, _: &mut [u8], _: u64) -> core::result::Result<usize, crate::FileError> {
+            Err(crate::FileError::Io)
         }
-        fn offset_write(&self, _: &[u8], _: u64) -> core::result::Result<usize, crate::OsdpError> {
+        fn offset_write(&self, _: &[u8], _: u64) -> core::result::Result<usize, crate::FileError> {
             Ok(0)
         }
-        fn close(&mut self) -> core::result::Result<(), crate::OsdpError> {
+        fn close(&mut self) -> core::result::Result<(), crate::FileError> {
             Ok(())
         }
     }
@@ -150,16 +150,16 @@ mod tests {
     struct OverReportingRead;
 
     impl OsdpFileOps for OverReportingRead {
-        fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, crate::OsdpError> {
+        fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, crate::FileError> {
             Ok(0)
         }
-        fn offset_read(&self, buf: &mut [u8], _: u64) -> core::result::Result<usize, crate::OsdpError> {
+        fn offset_read(&self, buf: &mut [u8], _: u64) -> core::result::Result<usize, crate::FileError> {
             Ok(buf.len() + 1)
         }
-        fn offset_write(&self, _: &[u8], _: u64) -> core::result::Result<usize, crate::OsdpError> {
+        fn offset_write(&self, _: &[u8], _: u64) -> core::result::Result<usize, crate::FileError> {
             Ok(0)
         }
-        fn close(&mut self) -> core::result::Result<(), crate::OsdpError> {
+        fn close(&mut self) -> core::result::Result<(), crate::FileError> {
             Ok(())
         }
     }

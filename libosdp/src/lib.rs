@@ -68,6 +68,7 @@ extern crate alloc;
 mod channel;
 mod commands;
 mod cp;
+mod error;
 mod events;
 mod ffi;
 mod file;
@@ -85,102 +86,11 @@ pub use pdcap::*;
 pub use pdid::*;
 pub use pdinfo::*;
 
-#[allow(unused_imports)]
-use alloc::{borrow::ToOwned, boxed::Box, format, string::String};
-
-#[cfg(feature = "std")]
-use thiserror::Error;
+use alloc::{borrow::ToOwned, string::String};
 
 pub use cp::{ControlPanel, ControlPanelBuilder};
+pub use error::{Error, FileError};
 pub use pd::PeripheralDevice;
-
-/// OSDP public errors
-#[derive(Debug, Default)]
-#[cfg_attr(feature = "std", derive(Error))]
-pub enum OsdpError {
-    /// PD info error
-    #[cfg_attr(feature = "std", error("Invalid PdInfo {0}"))]
-    PdInfo(&'static str),
-
-    /// Command build/send error
-    #[cfg_attr(feature = "std", error("Invalid OsdpCommand"))]
-    Command,
-
-    /// Event build/send error
-    #[cfg_attr(feature = "std", error("Invalid OsdpEvent"))]
-    Event,
-
-    /// PD/CP status query error
-    #[cfg_attr(feature = "std", error("Failed to query {0} from device"))]
-    Query(&'static str),
-
-    /// File transfer errors
-    #[cfg_attr(feature = "std", error("File transfer failed: {0}"))]
-    FileTransfer(&'static str),
-
-    /// CP/PD device setup failed.
-    #[cfg_attr(feature = "std", error("Failed to setup device"))]
-    Setup,
-
-    /// String parse error
-    #[cfg_attr(feature = "std", error("Type {0} parse error"))]
-    Parse(String),
-
-    /// OSDP channel error
-    #[cfg_attr(feature = "std", error("Channel error: {0}"))]
-    Channel(&'static str),
-
-    /// String conversion error
-    #[cfg_attr(feature = "std", error("PD info build error: {0}"))]
-    PdInfoBuilder(&'static str),
-
-    /// IO Error
-    #[cfg(feature = "std")]
-    #[error("IO Error")]
-    IO(#[from] std::io::Error),
-    /// IO Error
-    #[cfg(not(feature = "std"))]
-    IO(Box<dyn embedded_io::Error>),
-
-    /// Unknown error
-    #[default]
-    #[cfg_attr(feature = "std", error("Unknown/Unspecified error"))]
-    Unknown,
-}
-
-#[cfg(feature = "defmt")]
-impl defmt::Format for OsdpError {
-    fn format(&self, f: defmt::Formatter<'_>) {
-        match self {
-            OsdpError::PdInfo(e) => defmt::write!(f, "OsdpError::PdInfo({0})", e),
-            OsdpError::Command => defmt::write!(f, "OsdpError::Command"),
-            OsdpError::Event => defmt::write!(f, "OsdpError::Event"),
-            OsdpError::Query(e) => defmt::write!(f, "OsdpError::Query({0})", e),
-            OsdpError::FileTransfer(e) => defmt::write!(f, "OsdpError::FileTransfer({0})", e),
-            OsdpError::Setup => defmt::write!(f, "OsdpError::Setup"),
-            OsdpError::Parse(e) => defmt::write!(f, "OsdpError::Parse({0})", e.as_str()),
-            OsdpError::Channel(e) => defmt::write!(f, "OsdpError::Channel({0})", e),
-            OsdpError::PdInfoBuilder(e) => defmt::write!(f, "OsdpError::PdInfoBuilder({0})", e),
-            OsdpError::IO(_) => defmt::write!(f, "OsdpError::IO"), // Error cannot be formatted, because there is no way to set defmt::Format as a bound
-            OsdpError::Unknown => defmt::write!(f, "OsdpError::Unknown"),
-        }
-    }
-}
-
-impl From<core::convert::Infallible> for OsdpError {
-    fn from(_: core::convert::Infallible) -> Self {
-        unreachable!()
-    }
-}
-
-impl From<ChannelError> for OsdpError {
-    fn from(value: ChannelError) -> OsdpError {
-        match value {
-            ChannelError::WouldBlock => OsdpError::Channel("WouldBlock"),
-            ChannelError::TransportError => OsdpError::Channel("TransportError"),
-        }
-    }
-}
 
 /// Trait to convert between BigEndian and LittleEndian types
 pub trait ConvertEndian {
@@ -218,14 +128,14 @@ bitflags::bitflags! {
 }
 
 impl core::str::FromStr for OsdpFlag {
-    type Err = OsdpError;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "EnforceSecure" => Ok(OsdpFlag::EnforceSecure),
             "InstallMode" => Ok(OsdpFlag::InstallMode),
             "IgnoreUnsolicited" => Ok(OsdpFlag::IgnoreUnsolicited),
-            _ => Err(OsdpError::Parse(format!("OsdpFlag: {s}"))),
+            _ => Err(Error::InvalidArgument("unknown flag name")),
         }
     }
 }

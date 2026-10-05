@@ -1,10 +1,10 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
 mod common;
-type Result<T> = core::result::Result<T, libosdp::OsdpError>;
+type Result<T> = core::result::Result<T, libosdp::Error>;
 
 use std::{sync::MutexGuard, thread, time};
 
