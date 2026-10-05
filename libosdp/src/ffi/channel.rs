@@ -8,13 +8,16 @@ use alloc::{boxed::Box, vec};
 use core::ffi::c_void;
 
 unsafe extern "C" fn raw_read(data: *mut c_void, buf: *mut u8, len: i32) -> i32 {
-    let channel: *mut Box<dyn Channel> = data as *mut _;
-    let channel = channel.as_mut().unwrap();
-    let mut read_buf = vec![0u8; len as usize];
-    match channel.read(&mut read_buf) {
+    if buf.is_null() || len < 0 {
+        return -1;
+    }
+    let channel = unsafe { &mut *(data as *mut Box<dyn Channel>) };
+    let buf = unsafe { core::slice::from_raw_parts_mut(buf, len as usize) };
+    match channel.read(buf) {
         Ok(n) => {
-            let src_ptr = read_buf.as_mut_ptr();
-            core::ptr::copy_nonoverlapping(src_ptr, buf, len as usize);
+            if n > buf.len() {
+                return -1;
+            }
             n as i32
         }
         Err(ChannelError::WouldBlock) => 0,
@@ -85,5 +88,96 @@ impl Drop for OwnedChannel {
 impl core::fmt::Debug for OwnedChannel {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("OwnedChannel").finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TwoBytes;
+
+    impl Channel for TwoBytes {
+        fn get_id(&self) -> i32 {
+            0
+        }
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize, ChannelError> {
+            buf[..2].copy_from_slice(&[0x11, 0x22]);
+            Ok(2)
+        }
+        fn write(&mut self, buf: &[u8]) -> Result<usize, ChannelError> {
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> Result<(), ChannelError> {
+            Ok(())
+        }
+        fn close(&mut self) -> Result<(), ChannelError> {
+            Ok(())
+        }
+    }
+
+    struct OverReportingRead;
+
+    impl Channel for OverReportingRead {
+        fn get_id(&self) -> i32 {
+            0
+        }
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize, ChannelError> {
+            Ok(buf.len() + 1)
+        }
+        fn write(&mut self, buf: &[u8]) -> Result<usize, ChannelError> {
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> Result<(), ChannelError> {
+            Ok(())
+        }
+        fn close(&mut self) -> Result<(), ChannelError> {
+            Ok(())
+        }
+    }
+
+    struct PanicOnRead;
+
+    impl Channel for PanicOnRead {
+        fn get_id(&self) -> i32 {
+            0
+        }
+        fn read(&mut self, _: &mut [u8]) -> Result<usize, ChannelError> {
+            panic!("read should not be called with negative len")
+        }
+        fn write(&mut self, buf: &[u8]) -> Result<usize, ChannelError> {
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> Result<(), ChannelError> {
+            Ok(())
+        }
+        fn close(&mut self) -> Result<(), ChannelError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn read_leaves_bytes_past_the_count_untouched() {
+        let channel = OwnedChannel::new(Box::new(TwoBytes));
+        let mut buf = [0xEEu8; 8];
+        let n = unsafe { raw_read(channel.data(), buf.as_mut_ptr(), buf.len() as i32) };
+        assert_eq!(n, 2);
+        assert_eq!(buf, [0x11, 0x22, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE]);
+    }
+
+    #[test]
+    fn read_rejects_over_reported_count() {
+        let channel = OwnedChannel::new(Box::new(OverReportingRead));
+        let mut buf = [0xEEu8; 8];
+        let n = unsafe { raw_read(channel.data(), buf.as_mut_ptr(), buf.len() as i32) };
+        assert_eq!(n, -1);
+    }
+
+    #[test]
+    fn read_rejects_negative_len() {
+        let channel = OwnedChannel::new(Box::new(PanicOnRead));
+        let mut buf = [0xEEu8; 8];
+        let n = unsafe { raw_read(channel.data(), buf.as_mut_ptr(), -1) };
+        assert_eq!(n, -1);
     }
 }
