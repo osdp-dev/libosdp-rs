@@ -56,6 +56,7 @@ Release subject ## TODO
 
 - ## TODO
 - commands: Add LedColor::White, new in LibOSDP 4.0
+- libosdp: Declare Rust 1.85 as the minimum supported version
 
 ## Fixes
 
