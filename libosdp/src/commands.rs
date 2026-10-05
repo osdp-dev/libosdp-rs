@@ -706,15 +706,20 @@ impl From<libosdp_sys::osdp_cmd_keyset> for KeySetCommand {
     }
 }
 
-impl From<KeySetCommand> for libosdp_sys::osdp_cmd_keyset {
-    fn from(value: KeySetCommand) -> Self {
+impl TryFrom<KeySetCommand> for libosdp_sys::osdp_cmd_keyset {
+    type Error = Error;
+
+    fn try_from(value: KeySetCommand) -> Result<Self> {
         let mut data = [0; libosdp_sys::OSDP_CMD_KEYSET_KEY_MAX_LEN as usize];
+        if value.data.len() > data.len() {
+            return Err(Error::TooLong { max: data.len() });
+        }
         data[..value.data.len()].copy_from_slice(&value.data[..]);
-        libosdp_sys::osdp_cmd_keyset {
+        Ok(libosdp_sys::osdp_cmd_keyset {
             type_: value.key_type,
             length: value.data.len() as u8,
             data,
-        }
+        })
     }
 }
 
@@ -742,15 +747,20 @@ impl From<libosdp_sys::osdp_cmd_mfg> for MfgCommand {
     }
 }
 
-impl From<MfgCommand> for libosdp_sys::osdp_cmd_mfg {
-    fn from(value: MfgCommand) -> Self {
+impl TryFrom<MfgCommand> for libosdp_sys::osdp_cmd_mfg {
+    type Error = Error;
+
+    fn try_from(value: MfgCommand) -> Result<Self> {
         let mut data = [0; libosdp_sys::OSDP_CMD_MFG_MAX_DATALEN as usize];
+        if value.data.len() > data.len() {
+            return Err(Error::TooLong { max: data.len() });
+        }
         data[..value.data.len()].copy_from_slice(&value.data[..]);
-        libosdp_sys::osdp_cmd_mfg {
+        Ok(libosdp_sys::osdp_cmd_mfg {
             vendor_code: value.vendor_code.as_le(),
             length: value.data.len() as u8,
             data,
-        }
+        })
     }
 }
 
@@ -879,7 +889,7 @@ impl TryFrom<Command> for libosdp_sys::osdp_cmd {
                 id: libosdp_sys::osdp_cmd_e_OSDP_CMD_KEYSET,
                 flags: 0,
                 __bindgen_anon_1: libosdp_sys::osdp_cmd__bindgen_ty_1 {
-                    keyset: c.clone().into(),
+                    keyset: c.try_into()?,
                 },
             },
             Command::Mfg(c) => libosdp_sys::osdp_cmd {
@@ -887,7 +897,7 @@ impl TryFrom<Command> for libosdp_sys::osdp_cmd {
                 id: libosdp_sys::osdp_cmd_e_OSDP_CMD_MFG,
                 flags: 0,
                 __bindgen_anon_1: libosdp_sys::osdp_cmd__bindgen_ty_1 {
-                    mfg: c.clone().into(),
+                    mfg: c.try_into()?,
                 },
             },
             Command::FileTx(c) => libosdp_sys::osdp_cmd {
@@ -1136,7 +1146,7 @@ mod tests {
             vendor_code: (0x05, 0x07, 0x09),
             data: vec![0x55, 0xAA],
         };
-        let cmd_struct: osdp_cmd_mfg = cmd.clone().into();
+        let cmd_struct: osdp_cmd_mfg = cmd.clone().try_into().unwrap();
 
         assert_eq!(cmd_struct.vendor_code, 0x90705);
         assert_eq!(cmd_struct.length, 2);

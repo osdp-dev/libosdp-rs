@@ -138,18 +138,25 @@ impl TryFrom<libosdp_sys::osdp_event_cardread> for CardRead {
     }
 }
 
-impl From<CardRead> for libosdp_sys::osdp_event_cardread {
-    fn from(value: CardRead) -> Self {
+impl TryFrom<CardRead> for libosdp_sys::osdp_event_cardread {
+    type Error = Error;
+
+    fn try_from(value: CardRead) -> Result<Self> {
         let mut data = [0; libosdp_sys::OSDP_EVENT_CARDREAD_MAX_DATALEN as usize];
-        let length = value.nr_bits as u16;
+        if value.data.len() > data.len() {
+            return Err(Error::TooLong { max: data.len() });
+        }
+        if value.nr_bits > value.data.len() * 8 {
+            return Err(Error::InvalidArgument("more card bits than data"));
+        }
         data[..value.data.len()].copy_from_slice(&value.data[..]);
-        libosdp_sys::osdp_event_cardread {
+        Ok(libosdp_sys::osdp_event_cardread {
             reader_no: value.reader_no,
             format: value.format.into(),
             direction: value.direction as i32,
-            length,
+            length: value.nr_bits as u16,
             data,
-        }
+        })
     }
 }
 
@@ -188,15 +195,20 @@ impl From<libosdp_sys::osdp_event_keypress> for KeyPress {
     }
 }
 
-impl From<KeyPress> for libosdp_sys::osdp_event_keypress {
-    fn from(value: KeyPress) -> Self {
+impl TryFrom<KeyPress> for libosdp_sys::osdp_event_keypress {
+    type Error = Error;
+
+    fn try_from(value: KeyPress) -> Result<Self> {
         let mut data = [0; libosdp_sys::OSDP_EVENT_KEYPRESS_MAX_DATALEN as usize];
+        if value.data.len() > data.len() {
+            return Err(Error::TooLong { max: data.len() });
+        }
         data[..value.data.len()].copy_from_slice(&value.data[..]);
-        libosdp_sys::osdp_event_keypress {
+        Ok(libosdp_sys::osdp_event_keypress {
             reader_no: value.reader_no,
             length: value.data.len() as i32,
             data,
-        }
+        })
     }
 }
 
@@ -225,15 +237,20 @@ impl From<libosdp_sys::osdp_event_mfgrep> for MfgReply {
     }
 }
 
-impl From<MfgReply> for libosdp_sys::osdp_event_mfgrep {
-    fn from(value: MfgReply) -> Self {
+impl TryFrom<MfgReply> for libosdp_sys::osdp_event_mfgrep {
+    type Error = Error;
+
+    fn try_from(value: MfgReply) -> Result<Self> {
         let mut data = [0; libosdp_sys::OSDP_EVENT_MFGREP_MAX_DATALEN as usize];
+        if value.data.len() > data.len() {
+            return Err(Error::TooLong { max: data.len() });
+        }
         data[..value.data.len()].copy_from_slice(&value.data[..]);
-        libosdp_sys::osdp_event_mfgrep {
+        Ok(libosdp_sys::osdp_event_mfgrep {
             vendor_code: value.vendor_code.as_le(),
             length: value.data.len() as u8,
             data,
-        }
+        })
     }
 }
 
@@ -357,15 +374,17 @@ pub enum Event {
     Status(StatusReport),
 }
 
-impl From<Event> for libosdp_sys::osdp_event {
-    fn from(value: Event) -> Self {
-        match value {
+impl TryFrom<Event> for libosdp_sys::osdp_event {
+    type Error = Error;
+
+    fn try_from(value: Event) -> Result<Self> {
+        Ok(match value {
             Event::CardRead(e) => libosdp_sys::osdp_event {
                 _node: unsafe { core::mem::zeroed() },
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_CARDREAD,
                 flags: 0,
                 __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 {
-                    cardread: e.clone().into(),
+                    cardread: e.try_into()?,
                 },
             },
             Event::KeyPress(e) => libosdp_sys::osdp_event {
@@ -373,7 +392,7 @@ impl From<Event> for libosdp_sys::osdp_event {
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_KEYPRESS,
                 flags: 0,
                 __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 {
-                    keypress: e.clone().into(),
+                    keypress: e.try_into()?,
                 },
             },
             Event::MfgReply(e) => libosdp_sys::osdp_event {
@@ -381,7 +400,7 @@ impl From<Event> for libosdp_sys::osdp_event {
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_MFGREP,
                 flags: 0,
                 __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 {
-                    mfgrep: e.clone().into(),
+                    mfgrep: e.try_into()?,
                 },
             },
             Event::Status(e) => libosdp_sys::osdp_event {
@@ -390,7 +409,7 @@ impl From<Event> for libosdp_sys::osdp_event {
                 flags: 0,
                 __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 { status: e.into() },
             },
-        }
+        })
     }
 }
 
@@ -429,7 +448,7 @@ mod tests {
     #[test]
     fn test_event_cardread() {
         let event = CardRead::new_raw(vec![0x55, 0xAA]);
-        let event_struct: osdp_event_cardread = event.clone().into();
+        let event_struct: osdp_event_cardread = event.clone().try_into().unwrap();
 
         assert_eq!(event_struct.length, 2 * 8);
         assert_eq!(event_struct.direction, 0);
@@ -443,7 +462,7 @@ mod tests {
         assert_eq!(event, event_struct.try_into().unwrap());
 
         let event = CardRead::new_wiegand(15, vec![0x55, 0xAA]).unwrap();
-        let event_struct: osdp_event_cardread = event.clone().into();
+        let event_struct: osdp_event_cardread = event.clone().try_into().unwrap();
 
         assert_eq!(event_struct.length, 15);
         assert_eq!(event_struct.direction, 0);

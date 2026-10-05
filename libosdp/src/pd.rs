@@ -105,7 +105,7 @@ impl Responder<'_> {
                 return Ok(());
             }
         }
-        let (raw, _) = RawSubmission::into_raw(libosdp_sys::osdp_event::from(event));
+        let (raw, _) = RawSubmission::into_raw(libosdp_sys::osdp_event::try_from(event)?);
         if unsafe { libosdp_sys::osdp_pd_submit_event(self.ctx, raw) } < 0 {
             unsafe { RawSubmission::reclaim(raw) };
             return Err(Error::Rejected);
@@ -218,7 +218,7 @@ impl PeripheralDevice {
     /// returned handle reports how it ended, once [`PeripheralDevice::refresh`]
     /// has sent it.
     pub fn submit(&self, event: Event) -> Result<Submission<'_>> {
-        let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_event::from(event));
+        let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_event::try_from(event)?);
         let rc = unsafe { libosdp_sys::osdp_pd_submit_event(self.ctx, raw) };
         if rc < 0 {
             unsafe { RawSubmission::reclaim(raw) };

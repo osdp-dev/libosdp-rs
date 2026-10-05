@@ -64,6 +64,11 @@ Release subject ## TODO
   than it was given, and hand it LibOSDP's buffer without copying it
 - commands: Refuse text longer than LibOSDP's buffer with
   Error::TooLong instead of panicking
+- api: Refuse a command (MfgCommand, KeySetCommand) or event
+  (CardRead, KeyPress, MfgReply) whose data does not fit LibOSDP's
+  buffer with Error::TooLong, from submit and Responder::reply,
+  instead of panicking. A CardRead with more bits than data is
+  refused with Error::InvalidArgument
 
 ## Changes
 

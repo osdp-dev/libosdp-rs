@@ -585,3 +585,59 @@ fn handler_answers_a_status_query_inline() -> Result<()> {
     );
     Ok(())
 }
+
+fn oversized_mfg_reply() -> Event {
+    Event::MfgReply(MfgReply {
+        vendor_code: (0x0A, 0x0B, 0x0C),
+        data: vec![0; 129],
+    })
+}
+
+#[test]
+fn oversized_event_is_refused_by_submit() -> Result<()> {
+    let (_cp, _target, pd) = secure_pair()?;
+    assert!(matches!(
+        pd.submit(oversized_mfg_reply()),
+        Err(Error::TooLong { max: 128 })
+    ));
+    Ok(())
+}
+
+#[test]
+fn oversized_command_is_refused_by_submit() -> Result<()> {
+    let (cp, target, _pd) = secure_pair()?;
+    let mfg = MfgCommand {
+        vendor_code: (0x0A, 0x0B, 0x0C),
+        data: vec![0; 65],
+    };
+    assert!(matches!(
+        cp.submit(target, Command::Mfg(mfg)),
+        Err(Error::TooLong { max: 64 })
+    ));
+    Ok(())
+}
+
+#[test]
+fn oversized_reply_is_refused_inside_the_handler() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    let replied = Arc::new(Mutex::new(None));
+    let seen = replied.clone();
+    pd.set_command_handler(move |_, reply: &mut Responder<'_>| {
+        *seen.lock().unwrap() = Some(reply.reply(oversized_mfg_reply()));
+        Err(Nak::Record)
+    });
+    let mfg = MfgCommand {
+        vendor_code: (0x0A, 0x0B, 0x0C),
+        data: vec![1],
+    };
+    let submission = cp.submit(target, Command::Mfg(mfg))?;
+    assert_eq!(
+        refresh_until_done(&cp, &pd, &submission),
+        Err(CompletionError::Failed)
+    );
+    assert_eq!(
+        *replied.lock().unwrap(),
+        Some(Err(Error::TooLong { max: 128 }))
+    );
+    Ok(())
+}
