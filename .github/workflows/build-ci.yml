@@ -39,6 +39,8 @@ jobs:
           target: thumbv6m-none-eabi
       - name: Cargo check
         run: cargo check
+      - name: Test with serde
+        run: cargo test --package libosdp --features serde --lib
       - name: Install gcc-arm-none-eabi
         run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
       - name: Cargo check no-std

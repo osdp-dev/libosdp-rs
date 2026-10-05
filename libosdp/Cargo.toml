@@ -17,8 +17,8 @@ bitflags = "2.10.0"
 embedded-io = { version = "0.7.1", features = ["alloc"] }
 libosdp-sys = "=3.2.7"
 log = { version = "0.4.29", optional = true }
-serde = { version = "1.0.228", features = ["derive", "alloc"], default-features = false }
-serde_arrays = "0.2.0"
+serde = { version = "1.0.228", features = ["derive", "alloc"], default-features = false, optional = true }
+serde_arrays = { version = "0.2.0", optional = true }
 thiserror = { version = "2.0.18", optional = true }
 defmt = { version = "1.0", optional = true, features = ["alloc"] }
 itoa = "1.0.17"
@@ -34,7 +34,8 @@ sha256 = "1.6.0"
 default = ["std"]
 defmt = ["embedded-io/defmt", "dep:defmt"]
 log = ["dep:log"]
-std = ["thiserror", "serde/std", "log", "log/std"]
+serde = ["dep:serde", "dep:serde_arrays"]
+std = ["thiserror", "serde?/std", "log", "log/std"]
 
 [[example]]
 name = "cp"

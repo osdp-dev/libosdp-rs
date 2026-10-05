@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -10,7 +10,6 @@
 
 use crate::OsdpError;
 use alloc::{vec::Vec, format};
-use serde::{Deserialize, Serialize};
 
 use super::ConvertEndian;
 
@@ -21,7 +20,8 @@ use defmt::panic;
 
 /// Various card formats that a PD can support. This is sent to CP when a PD
 /// must report a card read
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum OsdpCardFormats {
     /// Card format is not specified
@@ -62,7 +62,8 @@ impl From<OsdpCardFormats> for libosdp_sys::osdp_event_cardread_format_e {
 }
 
 /// Event that describes card read activity on the PD
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct OsdpEventCardRead {
     /// Reader (another device connected to this PD) which caused this event
@@ -153,7 +154,8 @@ impl From<OsdpEventCardRead> for libosdp_sys::osdp_event_cardread {
 }
 
 /// Event to describe a key press activity on the PD
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct OsdpEventKeyPress {
     /// Reader (another device connected to this PD) which caused this event
@@ -199,7 +201,8 @@ impl From<OsdpEventKeyPress> for libosdp_sys::osdp_event_keypress {
 }
 
 /// Event to transport a Manufacturer specific command's response.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct OsdpEventMfgReply {
     /// 3-byte IEEE assigned OUI used as vendor code
@@ -235,7 +238,8 @@ impl From<OsdpEventMfgReply> for libosdp_sys::osdp_event_mfgrep {
 }
 
 /// Status report type
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum OsdpStatusReportType {
     /// Input status report
@@ -297,7 +301,8 @@ impl From<OsdpStatusReportType> for libosdp_sys::osdp_status_report_type {
 /// number of items as described in the corresponding capability codes,
 /// - PdCapability::OutputControl
 /// - PdCapability::ContactStatusMonitoring
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct OsdpStatusReport {
     /// The kind of event to report see `enum osdp_event_status_type_e`
@@ -305,7 +310,7 @@ pub struct OsdpStatusReport {
     /// Number of valid entries in `report`
     pub nr_entries: usize,
     /// Status report
-    #[serde(with = "serde_arrays")]
+    #[cfg_attr(feature = "serde", serde(with = "serde_arrays"))]
     pub report: [u8; 64],
 }
 
@@ -335,7 +340,8 @@ impl From<OsdpStatusReport> for libosdp_sys::osdp_status_report {
 /// press, card reads, etc.,). They do this by creating an “event” and sending
 /// it to the CP. This module is responsible to handling such events though
 /// OsdpEvent.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum OsdpEvent {
     /// Event that describes card read activity on the PD

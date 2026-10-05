@@ -249,3 +249,14 @@ pub fn get_source_info() -> &'static str {
     let s = unsafe { core::ffi::CStr::from_ptr(s) };
     s.to_str().unwrap()
 }
+
+#[cfg(all(test, feature = "serde"))]
+mod serde_tests {
+    fn assert_serde<T: serde::Serialize + serde::de::DeserializeOwned>() {}
+
+    #[test]
+    fn commands_and_events_are_serde() {
+        assert_serde::<crate::OsdpCommand>();
+        assert_serde::<crate::OsdpEvent>();
+    }
+}
