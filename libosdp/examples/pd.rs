@@ -19,28 +19,22 @@ impl OsdpChannel {
 
 /// Read documentation for each member in [libosdp::Channel].
 impl Channel for OsdpChannel {
-    fn get_id(&self) -> i32 {
-        0
-    }
-
     fn read(&mut self, _buf: &mut [u8]) -> Result<usize, ChannelError> {
         // TODO: Read from device
         Ok(0)
     }
 
-    fn write(&mut self, buf: &[u8]) -> Result<usize, ChannelError> {
-        // TODO: Write from device
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> Result<(), ChannelError> {
-        // TODO: flush device
+    fn write(&mut self, _buf: &[u8]) -> Result<(), ChannelError> {
+        // TODO: Queue all of buf on the device, or return WouldBlock
         Ok(())
     }
 
-    fn close(&mut self) -> Result<(), ChannelError> {
+    fn flush(&mut self) {
+        // TODO: Discard what the device has buffered
+    }
+
+    fn close(&mut self) {
         // TODO: close device
-        Ok(())
     }
 }
 

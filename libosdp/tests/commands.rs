@@ -39,7 +39,7 @@ fn test_thread_bus_channel() -> Result<()> {
 
     let buf_write = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     let mut buf_read = [0; 100];
-    assert_eq!(a.write(&buf_write)?, buf_write.len());
+    a.write(&buf_write)?;
     assert_eq!(b.read(&mut buf_read)?, buf_write.len());
     assert_eq!(c.read(&mut buf_read)?, buf_write.len());
     Ok(())

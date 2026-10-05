@@ -40,6 +40,11 @@ Release subject ## TODO
   command that expects data -- a manufacturer command, a status
   query -- with Responder::reply. Until a handler is set, every
   command, KEYSET and COMSET included, is refused with Nak::Record
+- channel: Make Channel::write all-or-nothing, as LibOSDP 4.0
+  requires: it returns Ok(()) once the whole buffer is queued, or
+  WouldBlock to have the packet retried on the next refresh. get_id
+  is gone, and flush and close return nothing and default to doing
+  nothing; flush discards buffered bytes
 
 ## Enhancements
 
@@ -48,6 +53,8 @@ Release subject ## TODO
 ## Fixes
 
 - ## TODO
+- file: Refuse a FileOps::offset_write that reports more bytes written
+  than it was given, and hand it LibOSDP's buffer without copying it
 
 ## Changes
 

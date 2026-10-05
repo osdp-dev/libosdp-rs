@@ -15,7 +15,7 @@ use libosdp::{
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::cell::{Cell, OnceCell};
 use std::num::NonZeroUsize;
@@ -46,19 +46,10 @@ impl Drop for DropGuard {
 struct IdleChannel(#[allow(dead_code)] DropGuard);
 
 impl Channel for IdleChannel {
-    fn get_id(&self) -> i32 {
-        0
-    }
     fn read(&mut self, _: &mut [u8]) -> core::result::Result<usize, ChannelError> {
         Err(ChannelError::WouldBlock)
     }
-    fn write(&mut self, buf: &[u8]) -> core::result::Result<usize, ChannelError> {
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> core::result::Result<(), ChannelError> {
-        Ok(())
-    }
-    fn close(&mut self) -> core::result::Result<(), ChannelError> {
+    fn write(&mut self, _: &[u8]) -> core::result::Result<(), ChannelError> {
         Ok(())
     }
 }
@@ -82,6 +73,54 @@ impl FileOps for NoFiles {
 
 fn pd_info() -> Result<PdInfoBuilder> {
     PdInfoBuilder::new().name("PD 101")?.address(101)?.baud_rate(115200)
+}
+
+#[derive(Clone, Default)]
+struct Lifecycle(Arc<Mutex<Vec<&'static str>>>);
+
+impl Lifecycle {
+    fn record(&self, step: &'static str) {
+        self.0.lock().unwrap().push(step);
+    }
+    fn steps(&self) -> Vec<&'static str> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+struct RecordingChannel(Lifecycle);
+
+impl Channel for RecordingChannel {
+    fn read(&mut self, _: &mut [u8]) -> core::result::Result<usize, ChannelError> {
+        Err(ChannelError::WouldBlock)
+    }
+    fn write(&mut self, _: &[u8]) -> core::result::Result<(), ChannelError> {
+        Ok(())
+    }
+    fn close(&mut self) {
+        self.0.record("close");
+    }
+}
+
+impl Drop for RecordingChannel {
+    fn drop(&mut self) {
+        self.0.record("drop");
+    }
+}
+
+#[test]
+fn channel_is_closed_once_before_it_is_freed() -> Result<()> {
+    let cp_log = Lifecycle::default();
+    let mut builder = ControlPanelBuilder::new(Box::new(RecordingChannel(cp_log.clone())));
+    builder.add_pd(pd_info()?)?;
+    builder.add_pd(PdInfoBuilder::new().address(102)?.baud_rate(115200)?)?;
+    drop(builder.build()?);
+    assert_eq!(cp_log.steps(), ["close", "drop"]);
+
+    let pd_log = Lifecycle::default();
+    let pd = PeripheralDevice::new(pd_info()?, Box::new(RecordingChannel(pd_log.clone())))?;
+    drop(pd);
+    assert_eq!(pd_log.steps(), ["close", "drop"]);
+    Ok(())
 }
 
 #[test]
@@ -203,9 +242,6 @@ thread_local! {
 struct RefreshesItsOwnCp;
 
 impl Channel for RefreshesItsOwnCp {
-    fn get_id(&self) -> i32 {
-        0
-    }
     fn read(&mut self, _: &mut [u8]) -> core::result::Result<usize, ChannelError> {
         CP.with(|cp| {
             if let Some(cp) = cp.get() {
@@ -215,13 +251,7 @@ impl Channel for RefreshesItsOwnCp {
         });
         Err(ChannelError::WouldBlock)
     }
-    fn write(&mut self, buf: &[u8]) -> core::result::Result<usize, ChannelError> {
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> core::result::Result<(), ChannelError> {
-        Ok(())
-    }
-    fn close(&mut self) -> core::result::Result<(), ChannelError> {
+    fn write(&mut self, _: &[u8]) -> core::result::Result<(), ChannelError> {
         Ok(())
     }
 }

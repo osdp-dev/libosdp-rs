@@ -1,12 +1,15 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::io::{Read, Write};
+use std::io::Read;
 
 use libosdp::ChannelError;
-use ringbuf::{HeapRb, HeapProd, HeapCons, traits::Split};
+use ringbuf::{
+    traits::{Observer, Producer, Split},
+    HeapCons, HeapProd, HeapRb,
+};
 
 /// An in-memory OSDP channel suitable for testing
 pub struct MemoryChannel {
@@ -46,23 +49,15 @@ impl MemoryChannel {
 }
 
 impl libosdp::Channel for MemoryChannel {
-    fn get_id(&self) -> i32 {
-        self.id
-    }
-
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, libosdp::ChannelError> {
         self.receiver.read(buf).map_err(ChannelError::from)
     }
 
-    fn write(&mut self, buf: &[u8]) -> Result<usize, libosdp::ChannelError> {
-        self.sender.write(buf).map_err(ChannelError::from)
-    }
-
-    fn flush(&mut self) -> Result<(), libosdp::ChannelError> {
-        Ok(())
-    }
-
-    fn close(&mut self) -> Result<(), ChannelError> {
+    fn write(&mut self, buf: &[u8]) -> Result<(), libosdp::ChannelError> {
+        if self.sender.vacant_len() < buf.len() {
+            return Err(ChannelError::WouldBlock);
+        }
+        self.sender.push_slice(buf);
         Ok(())
     }
 }

@@ -11,19 +11,10 @@ use libosdp::{
 struct Idle;
 
 impl Channel for Idle {
-    fn get_id(&self) -> i32 {
-        0
-    }
     fn read(&mut self, _: &mut [u8]) -> Result<usize, ChannelError> {
         Err(ChannelError::WouldBlock)
     }
-    fn write(&mut self, buf: &[u8]) -> Result<usize, ChannelError> {
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> Result<(), ChannelError> {
-        Ok(())
-    }
-    fn close(&mut self) -> Result<(), ChannelError> {
+    fn write(&mut self, _: &[u8]) -> Result<(), ChannelError> {
         Ok(())
     }
 }

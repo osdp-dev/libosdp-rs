@@ -50,34 +50,24 @@ impl<E: embedded_io::Error + Sized> From<E> for ChannelError {
 /// The Channel trait acts as an interface for all channel implementors. See
 /// module description for the definition of a "channel" in LibOSDP.
 pub trait Channel: Send {
-    /// Since OSDP channels can be multi-drop (more than one PD can talk to a
-    /// CP on the same channel) and LibOSDP supports mixing multi-drop
-    /// connections among PDs it needs a way to identify each unique channel by
-    /// a channel ID. Implementors of this trait must also provide a method
-    /// which returns a unique i32 per channel.
-    ///
-    /// Ignored since LibOSDP 4.0, which takes one channel per context.
-    fn get_id(&self) -> i32;
-
-    /// Pull as many bytes into buffer as possible; returns the number of bytes
-    /// were read.
+    /// Pull as many bytes into buffer as possible without blocking; returns
+    /// the number of bytes read.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, ChannelError>;
 
-    /// Write a buffer into this writer, returning how many bytes were written.
-    fn write(&mut self, buf: &[u8]) -> Result<usize, ChannelError>;
+    /// Queue all of `buf` for sending, or none of it, without blocking.
+    /// [`ChannelError::WouldBlock`] asks LibOSDP to retry the same packet on
+    /// its next refresh; any other error drops the packet.
+    fn write(&mut self, buf: &[u8]) -> Result<(), ChannelError>;
 
-    /// Flush this output stream, ensuring that all intermediately buffered
-    /// contents reach their destination.
-    fn flush(&mut self) -> Result<(), ChannelError>;
+    /// Discard whatever is buffered, in either direction.
+    fn flush(&mut self) {}
 
-    /// Close this output stream
-    fn close(&mut self) -> Result<(), ChannelError>;
+    /// Called once, when the context that owns this channel is dropped.
+    fn close(&mut self) {}
 }
 
 impl core::fmt::Debug for dyn Channel {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Channel")
-            .field("id", &self.get_id())
-            .finish()
+        f.debug_struct("Channel").finish_non_exhaustive()
     }
 }

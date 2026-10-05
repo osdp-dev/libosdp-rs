@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -65,10 +65,6 @@ impl Debug for ThreadBus {
 }
 
 impl libosdp::Channel for ThreadBus {
-    fn get_id(&self) -> i32 {
-        self.id
-    }
-
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, libosdp::ChannelError> {
         let v = self.recv.lock().unwrap().try_recv().map_err(|e| match e {
             std::sync::mpsc::TryRecvError::Empty => Error::new(ErrorKind::WouldBlock, "No data"),
@@ -80,7 +76,7 @@ impl libosdp::Channel for ThreadBus {
         Ok(v.len())
     }
 
-    fn write(&mut self, buf: &[u8]) -> Result<usize, libosdp::ChannelError> {
+    fn write(&mut self, buf: &[u8]) -> Result<(), libosdp::ChannelError> {
         let v = buf.into();
         self.send.lock().unwrap().try_send(v).map_err(|e| match e {
             std::sync::mpsc::TrySendError::Full(_) => Error::new(ErrorKind::WouldBlock, "No space"),
@@ -88,14 +84,6 @@ impl libosdp::Channel for ThreadBus {
                 Error::new(ErrorKind::ConnectionReset, "disconnected")
             }
         })?;
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> Result<(), libosdp::ChannelError> {
-        Ok(())
-    }
-
-    fn close(&mut self) -> Result<(), libosdp::ChannelError> {
         Ok(())
     }
 }

@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::FileOps;
-use alloc::{boxed::Box, vec};
+use alloc::boxed::Box;
 use core::ffi::c_void;
 #[cfg(feature = "defmt")]
 use defmt::error;
@@ -59,12 +59,20 @@ unsafe extern "C" fn file_write(
     size: u32,
     offset: u32,
 ) -> i32 {
-    let ctx: *mut Box<dyn FileOps> = data as *mut _;
-    let ctx = ctx.as_ref().unwrap();
-    let mut write_buf = vec![0u8; size as usize];
-    core::ptr::copy_nonoverlapping(buf as *mut u8, write_buf.as_mut_ptr(), size as usize);
-    match ctx.offset_write(&write_buf, offset as u64) {
-        Ok(len) => len as i32,
+    if buf.is_null() {
+        return -1;
+    }
+    let ctx = unsafe { &*(data as *const Box<dyn FileOps>) };
+    let buf = unsafe { core::slice::from_raw_parts(buf as *const u8, size as usize) };
+    match ctx.offset_write(buf, offset as u64) {
+        Ok(len) => {
+            if len > buf.len() {
+                #[cfg(any(feature = "log", feature = "defmt"))]
+                error!("file_write: callback wrote {} bytes of {}", len, buf.len());
+                return -1;
+            }
+            len as i32
+        }
         Err(_e) => {
             #[cfg(any(feature = "log", feature = "defmt"))]
             error!("file_write: {:?}", _e);
@@ -171,6 +179,38 @@ mod tests {
         let rc = unsafe { file_read(ops.data(), buf.as_mut_ptr().cast(), 8u32, 0u32) };
         assert_eq!(rc, -1);
         assert_eq!(buf, [0xEE; 8]);
+    }
+
+    struct OverReportingWrite;
+
+    impl FileOps for OverReportingWrite {
+        fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, crate::FileError> {
+            Ok(0)
+        }
+        fn offset_read(&self, _: &mut [u8], _: u64) -> core::result::Result<usize, crate::FileError> {
+            Ok(0)
+        }
+        fn offset_write(&self, buf: &[u8], _: u64) -> core::result::Result<usize, crate::FileError> {
+            Ok(buf.len() + 1)
+        }
+        fn close(&mut self) -> core::result::Result<(), crate::FileError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn file_write_rejects_over_reported_count() {
+        let ops = OwnedFileOps::new(Box::new(OverReportingWrite));
+        let buf = [0x55u8; 8];
+        let rc = unsafe { file_write(ops.data(), buf.as_ptr().cast(), 8u32, 0u32) };
+        assert_eq!(rc, -1);
+    }
+
+    #[test]
+    fn file_write_rejects_a_null_buffer() {
+        let ops = OwnedFileOps::new(Box::new(OverReportingWrite));
+        let rc = unsafe { file_write(ops.data(), core::ptr::null(), 8u32, 0u32) };
+        assert_eq!(rc, -1);
     }
 
     #[test]
