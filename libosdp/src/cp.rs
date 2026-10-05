@@ -15,59 +15,60 @@ use crate::ffi::{
     channel::OwnedChannel,
     file::OwnedFileOps,
     log::cp_log_handler,
+    submit::cp_command_complete,
 };
 use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
-use core::ffi::c_void;
 
 type Result<T> = core::result::Result<T, OsdpError>;
 
-fn cp_setup(info: Vec<crate::OsdpPdInfoHandle>) -> Result<*mut c_void> {
-    let ctx = unsafe { libosdp_sys::osdp_cp_setup(info.len() as i32, info.as_ptr() as *const _) };
-    if ctx.is_null() {
-        Err(OsdpError::Setup)
-    } else {
-        Ok(ctx)
-    }
-}
-
-/// Builder for creating a new `ControlPanel`.
-#[derive(Debug, Default)]
+/// Builder for a [`ControlPanel`] driving the PDs on one OSDP bus.
+#[derive(Debug)]
 pub struct ControlPanelBuilder {
-    channel_pds: Vec<(Box<dyn Channel>, Vec<PdInfoBuilder>)>,
+    channel: Box<dyn Channel>,
+    pd_info: Vec<PdInfoBuilder>,
 }
 
 impl ControlPanelBuilder {
-    /// Create a new instance of [`ControlPanelBuilder`].
-    pub const fn new() -> Self {
+    /// Create a builder for the PDs reachable over `channel`.
+    pub fn new(channel: Box<dyn Channel>) -> Self {
         Self {
-            channel_pds: Vec::new(),
+            channel,
+            pd_info: Vec::new(),
         }
     }
 
-    /// Add a new PDs and their shared channel to the CP.
-    pub fn add_channel(mut self, channel: Box<dyn Channel>, pd_info: Vec<PdInfoBuilder>) -> Self {
-        self.channel_pds.push((channel, pd_info));
+    /// Add a PD on this bus. PDs are addressed by the order they were added in.
+    pub fn add_pd(mut self, pd_info: PdInfoBuilder) -> Self {
+        self.pd_info.push(pd_info);
         self
     }
 
     /// Build the [`ControlPanel`] instance.
     pub fn build(self) -> Result<ControlPanel> {
-        let mut channels = Vec::new();
-        let mut info: Vec<crate::OsdpPdInfoHandle> = Vec::new();
-        for (channel, pd_info) in self.channel_pds {
-            let id = channel.get_id();
-            let owned = OwnedChannel::new(channel);
-            let raw = owned.as_raw(id);
-            channels.push(owned);
-            info.extend(pd_info.into_iter().map(|pd| pd.channel(raw).build().into()));
-        }
-        if info.len() > 126 {
+        if self.pd_info.len() > 126 {
             return Err(OsdpError::PdInfo("max PD count exceeded"));
         }
+        let info: Vec<crate::OsdpPdInfoHandle> =
+            self.pd_info.into_iter().map(|pd| pd.build().into()).collect();
+        let channel = OwnedChannel::new(self.channel);
+        let raw = channel.as_raw();
         unsafe { libosdp_sys::osdp_set_log_callback(Some(cp_log_handler)) };
+        let ctx = unsafe {
+            libosdp_sys::osdp_cp_setup(&raw, info.len() as i32, info.as_ptr() as *const _)
+        };
+        if ctx.is_null() {
+            return Err(OsdpError::Setup);
+        }
+        unsafe {
+            libosdp_sys::osdp_cp_set_command_completion_callback(
+                ctx,
+                Some(cp_command_complete),
+                core::ptr::null_mut(),
+            )
+        };
         Ok(ControlPanel {
-            ctx: cp_setup(info)?,
-            channels,
+            ctx,
+            channel,
             event_callback: None,
             file_ops: BTreeMap::new(),
         })
@@ -78,7 +79,7 @@ impl ControlPanelBuilder {
 pub struct ControlPanel {
     ctx: *mut core::ffi::c_void,
     #[allow(dead_code)]
-    channels: Vec<OwnedChannel>,
+    channel: OwnedChannel,
     event_callback: Option<OwnedCallback<CpEventCallback>>,
     file_ops: BTreeMap<i32, OwnedFileOps>,
 }
@@ -100,11 +101,13 @@ impl ControlPanel {
         unsafe { libosdp_sys::osdp_cp_refresh(self.ctx) }
     }
 
-    /// Send [`OsdpCommand`] to a PD identified by the offset number (in PdInfo
-    /// vector in [`ControlPanel::new`]).
+    /// Send [`OsdpCommand`] to a PD identified by the offset number (in the
+    /// order PDs were added to the [`ControlPanelBuilder`]).
     pub fn send_command(&mut self, pd: i32, cmd: OsdpCommand) -> Result<()> {
-        let rc = unsafe { libosdp_sys::osdp_cp_send_command(self.ctx, pd, &cmd.into()) };
+        let cmd = Box::into_raw(Box::new(libosdp_sys::osdp_cmd::from(cmd)));
+        let rc = unsafe { libosdp_sys::osdp_cp_submit_command(self.ctx, pd, cmd) };
         if rc < 0 {
+            drop(unsafe { Box::from_raw(cmd) });
             Err(OsdpError::Command)
         } else {
             Ok(())
@@ -164,11 +167,16 @@ impl ControlPanel {
 
     /// Set [`OsdpFlag`] for a PD identified by the offset number (in PdInfo
     /// vector in [`ControlPanel::new`]).
+    ///
+    /// # Panics
+    ///
+    /// Panics when LibOSDP refuses the change: setting
+    /// [`OsdpFlag::InstallMode`], clearing [`OsdpFlag::EnforceSecure`], or
+    /// setting [`OsdpFlag::EnforceSecure`] on a PD without an SCBK.
     pub fn set_flag(&mut self, pd: i32, flags: OsdpFlag, value: bool) {
         let rc = unsafe { libosdp_sys::osdp_cp_modify_flag(self.ctx, pd, flags.bits(), value) };
         if rc < 0 {
-            // OsdpFlag should guarantee that we never fail here. If we did,
-            // it's probably best to panic here.
+            // The flag API has no error path, so a refused change panics.
             panic!("osdp_cp_modify_flag failed!")
         }
     }
@@ -197,20 +205,15 @@ impl ControlPanel {
     /// offset number (in PdInfo vector in [`ControlPanel::new`]). Returns
     /// (size, offset) of the current file transfer operation.
     pub fn file_transfer_status(&self, pd: i32) -> Result<(i32, i32)> {
-        let mut size: i32 = 0;
-        let mut offset: i32 = 0;
+        let mut size: u32 = 0;
+        let mut offset: u32 = 0;
         let rc = unsafe {
-            libosdp_sys::osdp_get_file_tx_status(
-                self.ctx,
-                pd,
-                &mut size as *mut i32,
-                &mut offset as *mut i32,
-            )
+            libosdp_sys::osdp_get_file_tx_status(self.ctx, pd, &mut size, &mut offset)
         };
         if rc < 0 {
             Err(OsdpError::FileTransfer("Not not in progress"))
         } else {
-            Ok((size, offset))
+            Ok((size as i32, offset as i32))
         }
     }
 

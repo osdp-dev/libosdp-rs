@@ -9,10 +9,11 @@ use defmt::{debug, error, info, warn};
 use log::{debug, error, info, warn};
 
 pub(crate) unsafe extern "C" fn cp_log_handler(
+    _pd: ::core::ffi::c_int,
     _log_level: ::core::ffi::c_int,
+    _msg: *const ::core::ffi::c_char,
     _file: *const ::core::ffi::c_char,
     _line: ::core::ffi::c_ulong,
-    _msg: *const ::core::ffi::c_char,
 ) {
     #[cfg(any(feature = "log", feature = "defmt"))]
     {
@@ -33,10 +34,11 @@ pub(crate) unsafe extern "C" fn cp_log_handler(
 }
 
 pub(crate) unsafe extern "C" fn pd_log_handler(
+    _pd: ::core::ffi::c_int,
     _log_level: ::core::ffi::c_int,
+    _msg: *const ::core::ffi::c_char,
     _file: *const ::core::ffi::c_char,
     _line: ::core::ffi::c_ulong,
-    _msg: *const ::core::ffi::c_char,
 ) {
     #[cfg(any(feature = "log", feature = "defmt"))]
     {

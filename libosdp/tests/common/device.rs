@@ -33,9 +33,7 @@ impl CpDevice {
             .address(101)?
             .baud_rate(115200)?
             .secure_channel_key(pd_0_key);
-        let cp = ControlPanelBuilder::new()
-            .add_channel(bus, vec![pd_0])
-            .build()?;
+        let cp = ControlPanelBuilder::new(bus).add_pd(pd_0).build()?;
         let (event_tx, event_rx) = std::sync::mpsc::channel::<(i32, OsdpEvent)>();
 
         let dev = Arc::new(Mutex::new(cp));

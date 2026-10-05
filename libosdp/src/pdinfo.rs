@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -16,7 +16,6 @@ pub struct PdInfo {
     flags: OsdpFlag,
     id: PdId,
     cap: Vec<libosdp_sys::osdp_pd_cap>,
-    channel: Option<libosdp_sys::osdp_channel>,
     scbk: Option<[u8; 16]>,
 }
 impl PdInfo {
@@ -113,7 +112,8 @@ impl PdInfo {
     }
 
     /// Get a PDs secure channel key.
-    /// If the key is not set, the PD will be set to install mode.
+    /// Without a key the secure channel is disabled; set
+    /// [`OsdpFlag::InstallMode`] to bring it up on SCBK-D.
     ///
     /// # Example
     /// ```
@@ -142,7 +142,6 @@ pub struct PdInfoBuilder {
     flags: OsdpFlag,
     id: PdId,
     cap: Vec<libosdp_sys::osdp_pd_cap>,
-    channel: Option<libosdp_sys::osdp_channel>,
     scbk: Option<[u8; 16]>,
 }
 
@@ -216,14 +215,8 @@ impl PdInfoBuilder {
         self
     }
 
-    /// Set Osdp communication channel
-    pub fn channel(mut self, channel: libosdp_sys::osdp_channel) -> PdInfoBuilder {
-        self.channel = Some(channel);
-        self
-    }
-
-    /// Set secure channel key. If the key is not set, the PD will be set to
-    /// install mode.
+    /// Set secure channel key. Without a key the secure channel is
+    /// disabled; set [`OsdpFlag::InstallMode`] to bring it up on SCBK-D.
     pub fn secure_channel_key(mut self, key: [u8; 16]) -> PdInfoBuilder {
         self.scbk = Some(key);
         self
@@ -249,7 +242,6 @@ impl PdInfoBuilder {
             flags: self.flags,
             id: self.id,
             cap: self.cap,
-            channel: self.channel,
             scbk: self.scbk,
         }
     }
@@ -277,7 +269,7 @@ impl From<PdInfo> for OsdpPdInfoHandle {
             let mut cap = info.cap.clone();
             cap.reserve(1);
             cap.push(libosdp_sys::osdp_pd_cap {
-                function_code: -1i8 as u8,
+                function_code: libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SENTINEL,
                 compliance_level: 0,
                 num_items: 0,
             });
@@ -287,12 +279,11 @@ impl From<PdInfo> for OsdpPdInfoHandle {
         };
         OsdpPdInfoHandle(libosdp_sys::osdp_pd_info_t {
             name: info.name.clone().into_raw(),
-            baud_rate: info.baud_rate,
+            baud_rate: info.baud_rate as u32,
             address: info.address,
-            flags: info.flags.bits() as i32,
+            flags: info.flags.bits(),
             id: info.id.into(),
             cap: cap as *mut _,
-            channel: info.channel.expect("no channel provided"),
             scbk,
         })
     }
@@ -307,7 +298,9 @@ impl Drop for OsdpPdInfoHandle {
             }
             if !info.cap.is_null() {
                 let mut cap = info.cap as *mut libosdp_sys::osdp_pd_cap;
-                while (*cap).function_code != -1i8 as u8 {
+                while (*cap).function_code
+                    != libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SENTINEL
+                {
                     cap = cap.add(1);
                 }
                 let len = (cap.offset_from(info.cap) + 1) as usize;

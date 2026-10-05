@@ -88,6 +88,7 @@ fn generate_osdp_build_headers(out_dir: &str) -> Result<()> {
         &dest,
         vec![
             ("PROJECT_VERSION", env!("CARGO_PKG_VERSION")),
+            ("LIBOSDP_VERSION_STR", env!("CARGO_PKG_VERSION")),
             (
                 "PROJECT_NAME",
                 format!("{}-rust", env!("CARGO_PKG_NAME")).as_str(),
@@ -157,6 +158,10 @@ fn main() -> Result<()> {
         "vendor/src/osdp_file.c",
         "vendor/src/osdp_pd.c",
         "vendor/src/osdp_cp.c",
+        "vendor/src/osdp_metrics.c",
+        "vendor/src/osdp_multipart.c",
+        "vendor/src/osdp_piv.c",
+        "vendor/src/osdp_bio.c",
         "vendor/src/crypto/tinyaes_src.c",
         "vendor/src/crypto/tinyaes.c",
     ];

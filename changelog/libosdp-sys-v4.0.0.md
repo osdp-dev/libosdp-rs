@@ -1,0 +1,325 @@
+---
+release_crate: libosdp-sys
+release_date: 2026-10-05
+release_version: v4.0.0
+---
+
+Release subject ## TODO
+
+## Enhancements
+
+- ## TODO
+
+## Fixes
+
+- ## TODO
+
+## Changes
+
+- 12237dd cmake: Let the caller supply the git revision
+- 139984b ci: Publish the ESP-IDF component on release
+- 17fa5b5 esp-idf: Add a component build test
+- f5e1b51 utils: Bump submodule to fix ESP-IDF __noreturn
+- cdefab8 osdp: Route heap allocation through an overridable hook
+- af6ae1b api: Refuse refresh made during teardown
+- f76387e api: Add osdp_cp_cancel() for multi-part ops
+- b547e91 file: Close two ownership leaks in the file engine
+- eb02501 api: Drop OSDP_COMPLETION_ACCEPTED
+- e8883ac bio: Complete a multipart BIOREADR at reassembly
+- 1994239 api: Complete engine-owned commands when they finish
+- 618a555 api: Refuse osdp_* calls made during teardown
+- 0995c68 cp: Detach the queue in the TRS band flush
+- bb6c7d7 cp: pd: Detach the queue before draining it
+- c04448d CI: Bump pypa/cibuildwheel
+- 91f4c0a diag: Tolerate an uninitialized packet capture context
+- f993a35 phy: Count the mark byte against the packet buffer bound
+- 1aa368e tests: Own submitted commands and events in a slab pool
+- ae98c9a cp: Don't allow a security downgrade at runtime
+- 33c0e12 cp: Flag a PD swap on a previously secured slot
+- 48c8950 cp: Warn when a PD is configured without an SCBK
+- cdbe0f5 cp: Zeroize key material when the PD array is resized
+- 310943e pd: Zeroize the pending keyset key at teardown
+- d50f5d1 phy: Require a MAC'd keyset ack in ENFORCE_SECURE
+- 05c1ad8 phy: Reject a plaintext NAK while secure channel is up
+- 70689f7 cp: Refuse SCBK-D once a secure channel was established
+- abeed77 api: Reject ENFORCE_SECURE together with INSTALL_MODE
+- e6a73ec pd: Disable secure channel when no SCBK is set
+- 5263605 cp: Free per-PD rx storage when adding a PD fails
+- f80d6ab ci: verify release tags against the release key
+- b329185 config: Split tunables out of the generated header
+- 5279ce4 file: Abort a transfer whose PD never finishes
+- da74e5b file: Let a PD app decide how a transfer ends
+- 1f47ad9 pd: frame osdp_BUSY per v2.2 7.19
+- 7de3187 esp-idf: Add ESP-IDF component
+- 05db8d4 utils: Bump submodule for ESP-IDF platform detection
+- dbb5bd1 cmake: let GitInfo describe a directory other than the source root
+- 047b9b6 bio: fix uint32_t format specifier in fragment error log
+- 0d387ee CI: Bump actions/setup-python from 6 to 7
+- b49d979 tests: Cover the card-scan presence probe
+- d8b72d6 trs: Raise the presence-scan dwell defaults
+- f3da9b1 pd: Restore transparent mode off when the CP link restarts
+- 47887b6 cp: Warn about a missing smart-card reader when capabilities arrive
+- 28a5c9a cp: Admit ENTER_PIN's APDU against the packet size
+- 7465e92 cp: Expose the effective max C-APDU length
+- 608164c trs: Report that the reader declined the card scan
+- f6d1752 trs: Report presence changes, not presence
+- 748bb6e trs: Name the zero value of the card-status enum
+- 7e073e3 trs: Ask the reader whether the card is still there
+- 865203e trs: Cap the sighting hold at a fixed budget
+- aefcf38 tests: Cover the TRS presence scan end to end
+- e45c47c trs: Restore mode 00 even when the mode-set reply is lost
+- 324941e trs: Add background card presence scan
+- f90ce50 cp: Surface out-of-session XRD card sightings as events
+- 2f0d9a2 tests: Run the TRS and BUSY suites under zero-copy too
+- ceddff5 tests: Add an emulated PIV card and end-to-end TRS scenarios
+- f83637f trs: Raise APDU capacity for PIV-class exchanges
+- e473c4c cp: Tolerate REPLY_XRD outside a TRS session
+- 5255396 cp: Never retransmit a NAK'd transparent-card command
+- 7f56f55 trs: Accept Mode-Set without the optional config byte
+- 0730ae5 Add Transparent Reader Support (TRS)
+- 0dbd68d python: track PD state from library notifications
+- bdd18aa cp: notify PD status on every online transition
+- a338fce examples: bring platformio and python samples up to date
+- 8088ac1 api: hand back a mutable pointer on completion
+- dc5d603 examples: demonstrate the command/event memory model
+- ab65fd2 api: drop deprecated osdp_cp_send_command/osdp_pd_notify_event
+- 36af846 doc: specify lifetime, threading and callback contracts
+- b258ce2 api: require a completion callback to submit
+- 8f67a5e api: drop OSDP_NOTIFICATION_COMMAND
+- 87bfa88 pd: complete event FAILED when reply degrades to NAK
+- 0958672 api: add ACCEPTED completion for engine commands
+- 34032d1 pd: complete dequeued event when reply build fails
+- 16a5d3b CI: Bump pypa/cibuildwheel in the github-actions group
+- 99bf982 release: make single-commit releases the default
+- 287eb40 ci: only validate published changelog files
+- 62ac7ac cp: treat SEND_CMD_WAIT as a bus-busy phy state
+- 82e1714 docs: fix stale multipart notification comments
+- 846f318 style: drop manual column alignment to match clang-format
+- c86263a release: require Signed-off-by via commit-msg hook
+- 57ee5cc release: add two-phase prepare/publish workflow
+- 27e7b61 cp: notify app when the PD id is collected
+- 5f3248d pd: name the engine-continuation reply exemption
+- 4d1eca8 multipart: public mp-outcome enum and shared SC reserve
+- 8407bde cp: pre-land trs_dev's link-vs-activity seams
+- 06f38d8 cp: purify FSM transition tables
+- 4fd3cee cp: route NAK(SEQ_NUM) through the transition path
+- fcb6887 common: single owner for feature-engine teardown
+- 2365429 cp: drop dead PROBE state and EVENT_SEND request bit
+- 7c5b830 pd: abort in-flight bio op on CP link loss
+- 7d10f58 Revert "chore: Switch c-utils submodule URL to relative path"
+- 786244f chore: Switch c-utils submodule URL to relative path
+- 0229c59 python: fix PivData doctest bytes literal
+- a622663 platformio: sync osdp_config.h with new BIO/PIV/CP defines
+- 5a7b289 ci: report tests via job summary, drop checks:write
+- 72d5b70 ci: publish per-case unit-test JUnit report
+- 4c6dbcf tests: Report each sub-test as its own case
+- 17a98c8 tests: add suite selection, parallel runners, and JUnit
+- 8213d79 notify: Replace notification arg0/arg1 with typed payloads
+- acdd0e4 Add opt-in multipart support for BIOREADR reply
+- 7ae8097 tests: Add end-to-end pytest for the smartcard commands
+- 3b69f8a cp: Zero arg1 in PD status notifications
+- b9ecd53 python: Bind the smartcard/PIV commands and reply events
+- 6b22bf3 Add challenge/response authenticate command (osdp_CRAUTH)
+- fcb7408 Add general authenticate command (osdp_GENAUTH)
+- 1c61bb1 Add PIV data retrieval command (osdp_PIVDATA)
+- 021c3cf mp: tests: Close multipart engine and file receiver test gaps
+- 7827bd8 mp: Sweep multipart dead state and stale comments
+- fa4adaf mp: Encapsulate multipart state transitions in the engine
+- 64fb81d mp: python: Marshal multipart notification fields both ways
+- ab45303 mp: Handle multipart early-term explicitly in file transfer
+- fd81d33 mp: Report declared size in PD-side MP_START
+- 6f2b54d mp: Add multipart lifecycle notifications
+- dd2ac74 mp: tests: Add multipart engine and file keep-alive tests
+- 01cf8f9 Add multipart engine and migrate file transfer
+- 0976872 tests: Fix flaky busy test and CI build noise
+- a027f78 cp: bound the BUSY retry loop
+- 8720017 phy: retry BUSY-interrupted commands with original sequence
+- c1fad2c tests: add a channel interceptor hook to the mock channel
+- a714f1c tests/interop: Add command/event transport and secure-channel checks
+- 675a2f1 tests: keep inline reply events off the callback stack
+- 382caea python: add TDSET command bindings
+- 6caa17e osdp: add TDSET command support
+- 4658a4a Use OSDP_PD_CAP_SENTINEL to terminate capability arrays
+- 425b728 osdp: type enum-valued struct fields as their enum
+- cebab08 osdp: validate reader_no against READERS capability
+- 93d618d Mark CMD_RMODE and CMD_TDSET as deprecated
+- 9c90882 osdp: rework status reports as one byte per entity, capped by capability
+- 0e4ff22 osdp: document OSDP_STATUS_REPORT_MAX_LEN macro
+- dbe3310 docs: point READMEs to doc.osdp.dev as source of truth
+- f4cb917 Drop the internal-symbol reference from the public header
+- 4b80a19 python: Link the examples and README to the doc site
+- 670398f Reject commands carrying an undefined control code
+- 0a82f3e python: Assert the enum-typed fields are int-sized
+- a6faa65 python: Tolerate control codes we do not name
+- 50c9fb4 python: Flesh out the package classifiers
+- 71ebaa6 release: Read the python version from pyproject.toml
+- 37fc776 tests: Pin _sys.pyi to the constants the extension exports
+- 836212a python: Derive the control codes and payload limits from C
+- cf799c7 Name the command control codes
+- d354a34 tests: Cover the protocol space the suite never reached
+- b6584d9 tests: Cover the binding error paths
+- 6b31a16 python: Surface channel errors out of refresh()
+- f1a0545 python: Fix a use-after-free in register_file_ops
+- 47ba3a5 python: Raise instead of returning on a bad argument
+- 76aa68c python: Fix a crash when the PD is built without capabilities
+- 26d939e tests: Shorten the PD online timeout for pytest runs
+- fcac4f6 tests: Add a coverage runner for the python bindings
+- fe57559 python: Reject a malformed scbk in the PD constructor
+- a270d8c python: Expose the last two PD capability codes
+- 83c1115 python: Rewrite the osdp_sys docstrings
+- aae794f python: Drop redundant defaults from the doc examples
+- 8e316dc examples: Lean on the command and event field defaults
+- e3126a6 examples: Report a Wiegand card read from the PD app
+- 4d65b8c python: Check the arglist allocation in the PD command callback
+- 5671f34 python: Fix event dict leak in the CP event callback
+- 2b2fc0d python: Make command/event marshalling table-driven
+- e61b393 python: Raise on command marshal failure
+- 346c4ec python: Generate Doxygen XML for the bindings
+- 1e48c22 python: Replace command and event dicts with typed dataclasses
+- 6e218e2 python: Fix and type the KeyStore helper
+- b78aaa9 python: Carry the status report in a status command
+- 0d8f763 python: Check for conversion errors when parsing ints
+- c3673e1 python: Fix refcount bug in the PD command callback
+- a37c343 Make command and event buffer lengths overridable
+- 36f60c4 Don't downgrade to checksum when the PD does CRC
+- 8a5c516 pd: Allow osdp_OSTATR as an inline reply to osdp_OUT
+- c9a13ca Hoist cmd/reply ID byte out of the codec switches
+- 812de50 fixup! Add support for biometric commands and replies
+- a3f2df9 Keep the PD online when it declines a command
+- bfb9adc Add support for biometric commands and replies
+- d21fb90 Send manufacturer replies inline for MFG commands
+- e8f4017 Add support for MFGSTATR and MFGERRR replies
+- be3eda0 doc: Add note about command/event lifetimes
+- 08bccb3 Match cardread length to its 16-bit wire width
+- 1a80a06 Require a tick source on unidentifiable bare-metal targets
+- 0e9d44c utils: Bump submodule for native Arduino platform support
+- 72e1ec7 ci: Add bare-metal ARM compile check
+- c0212a1 Use uint32_t for file transfer sizes and offsets
+- 813c456 Use wrap-safe comparison for the response timeout
+- 2da1a3d Avoid int promotion overflow when shifting wire bytes
+- 865cc46 Widen osdp_pd_info_t flags to uint32_t
+- 0203552 Use fixed-width types for baud rate and file offsets
+- 18477cc ci: Drop redundant publish-pypi workflow
+- b15fb79 utils: Bump submodule to fix workqueue destroy race
+- 9098b76 utils: Bump submodule to fix workqueue use-after-free
+- a8a9134 file: Fix another instance of runtime check placed as assert
+- 16e79d8 file: Fix OOB read due to critical check placed as assert
+- 75613b8 cp: Fix OOB write in cp_decode_response REPLY_KEYPAD/RAW
+- 2a804bc phy: Guard packet length subtraction against underflow
+- d6bd00e phy: Fix framer wedge on fragmented packet header
+- 9ea57d1 python: Drop Python 3.9 from wheel builds
+- 929f395 utils: Bump submodule to fix MSVC wheel build
+- f849b5e python: Update setuptools requirement in /python
+- 68cb2d3 python: Fix wrong typecast in output command
+- 4c4cf60 phy: Keep staged reply's packet_buf in RX release
+- ef30726 tests: Run the unit suite under zero-copy RX
+- c50697b chore: Fix broken build by adding new tests to configure.sh
+- fa0af00 tests: expose and fuzz the frame codecs
+- a8434a2 tests: export internals via test_<fn> aliases, not function pointers
+- 34bae49 utils: Bump submodule to pull in zephyr __weak fix
+- 8d7a243 osdp: Overlay CP/PD static pools when role is exclusive
+- 4192cfa CI: Bump actions/cache from 5 to 6
+- 8277d4d Migrate goToMain references to osdp-dev org
+- 04664ff CI: Bump actions/checkout from 6 to 7
+- 7a23111 CI: Bump pypa/cibuildwheel in the github-actions group
+- abb3a30 python: link bindings to doc.osdp.dev and fix quick start
+- 45d03d8 README: link secure-channel and compatibility guides
+- 8b74b71 CI: Bump docker/setup-qemu-action from 2 to 4
+- c36e526 CI: Bump pypa/cibuildwheel from 3.4.0 to 4.0.0
+- ee2ce78 CI: Bump actions/upload-artifact from 6 to 7
+- cbc9499 SECURITY: Reword policy for clarity and fix typos
+- d3bbc1d README: Bump CMake minimum to 3.14 and mention find_package consumption
+- 5436dd3 cmake: Install headers once, harden uninstall, bump utils submodule
+- 03e159b Makefile: Install headers under include/libosdp/ to match pc Cflags
+- 3cbe8e0 cmake: Wire ctest, warn on tinyaes auto-fallback, fix CPack components
+- 6c8b0c5 cmake: Make find_package(libosdp) work for all crypto backends
+- 6c9344a cmake: Fix install paths and pkg-config consumption
+- 06ee619 doc: Deprecate in-tree doc site builds
+- d1d8baf python: update setuptools requirement in /python
+- c1efe07 CI: Bump actions/checkout from 5 to 6
+- 78ea710 CI: Bump docker/setup-buildx-action from 2 to 4
+- 70221de CI: Bump actions/download-artifact from 7 to 8
+- acb1fa6 CI: Bump actions/cache from 4 to 5
+- c34340e CI: Bump softprops/action-gh-release from 2 to 3
+- 5b2865e CI: Add Dependabot for actions and pip surfaces
+- 5f45087 python: Drop EOL Python 3.8 from wheel builds
+- 3214e90 file: Keep transfer alive when CP app read returns 0
+- 37580a6 phy: Don't reset reply-side state in RX packet release
+- 496bd37 unit-test: Fix stack-use-after-return in hotplug command test
+- ef8586a unit-test: Eliminate spurious warnings from make check
+- d3f7ad8 python: Bundle LICENSE file and tidy packaging
+- 573e421 python: Use SPDX license expression instead of classifier
+- 1587acf unit-test: Fix broken tests and add foreign CP command test
+- a93deec phy: Add a warning if a CP sees another CP's message
+- 0bf084d phy: Skip packets that don't belong to current context
+- 1b780eb Avoid libc surface under __BARE_METAL__
+- 4d31b21 Log accurate timeout duration
+- e600d30 Fix constness in C++ header methods.
+- b281fee crypto: Zeroize security keys at function exit points
+- b8f1ca7 tests: Fix arg1 check in cp_check_command_status
+- e94678a CI: Add pytests to reusable-ci.yml as a seprate check
+- de84e84 tests: Mirror OSDP_PD_ONLINE_TOUT_MS override in Makefile build
+- 990690c phy: Split packet finalize from channel send
+- dfbf978 API: Rename osdp_event_notification to osdp_notification
+- 218a268 Add test coverage for PD notifications
+- 6e899da file: Abort in-flight transfer on link loss
+- c07d953 PD: Deliver status notifications via the command callback
+- 756046a PD: Track online/offline state based on CP link activity
+- e378637 phy: Drain software rx ring on error-path state reset
+- b79952d tests: Fix flaky hotplug/async_fuzz cascade on macos-14
+- 862b8bc Move some window build into cross-platform build with --lib-only flag
+- c8fce4e API: Fix warnigns in MSVC build due to missing BUILDING_API
+- 3a7176e utils: Bump submodule; Add windows CI builds
+- c01cc92 PD: Fix bug in pd_cap check path which always ACKs
+- deff403 Fix test build failure on windows platforms
+- b65ce5e Fix cross-plarform build failure
+- 20bbbab Fix build failure due to missing LDFLAGS
+- f795700 Enable MSVC's conformwat /Zc:preprocessor
+- 7f4eea5 Add support for crypto backend selection
+- f0990cd API: file: Add support for CP file tx notifications
+- 2a70403 file: Honor OPT_OSDP_STATIC for the per-PD osdp_file slot
+- 78b2357 CP: Reset sequence number to 0 before starting a new SC session
+- 333bb9b Lower the sequence repeat logs to debug level
+- ce15337 Zephyr: More QoL changes for zephyr integration
+- 52abc71 API: Update osdp.hpp to be in sync with osdp.h
+- 77ca576 pytest: Fix crash due to missing baud rate handling in python layers
+- 61fbe31 API: Introduce a new link/protocol metrics tracker
+- 71556a6 PD: Retransmit cached reply on sequence-repeatgc
+- a54c57e utils: Bump submodule to pull ESP platform fix
+- 5d8296a CP: Fix bug in trasmit time accounting comparison
+- 7764466 CP: Yield channel between PD retry probes
+- 3fd5b15 CHANGELOG: Migrate from single file to split files for ease of maintenance
+- 810d33d Better calculate the transmit timeout for packets
+- 0d229b5 CP: Don't update sequence number on command retry probes
+- 14c2111 CI: Rewrite release pipelines to avoid premature publishing of artifacts
+- d68910b Fixed format string mismatch in osdp_diag.c: %d used for size_t argument #283
+- 10d858d utils: Bump submodule to pull in fix for slab_t packing issue
+- 5810411 API: Undefine API_DEPRECATED to fix macos build issue
+- 2f83c91 Update cibuildwheel version to 3.4.0
+- b892a91 CP: Fix PD poll loop after the multi-drop-only change
+- 661900c Fix broken build due to rebase mixups
+- e506db6 API: Introduce a new minimal logger mode
+- 297ac66 SC: Compute MAC progressively block by block
+- e3e0236 Make: Add explicit dependency tracking to avoid false test runs
+- 506debd tests: Rewrite the test harness to be more robust
+- 0422343 Cleanup TX staging buffer call sites
+- dc54993 Remove last remaining stale references
+- 72824b1 RAM Optimization: Move logger_t out of per-pd structs
+- 6d5ca16 Remove packet_capture context from __BARE_METAL__ builds
+- a89c433 Drop state refernces to pd->channel now that we use ctx->channel
+- 772ba9e API: Remove zero-copy-rx fallback path
+- c23e05e utils: Pull in tick_t changes and consume it
+- 50d0357 Remove status_report from PD struct by pre-building response
+- 34cda90 API: Drop inline REPLY_MFGREP support
+- edcc31b refactor: Remove ephemeral data array
+- ad9a64c refactor: pd: Move event handling out of ephemeral_data
+- 1cbb230 refactor: cp: Move event generation out of ephemeral_data
+- 3a331fc refactor: cp: Remove active command store out of ephemeral_data
+- 5f1fa3d refactor: Move comset data out of ephemeral_data
+- 2d92f06 refactor: Move keyset_pending out of ephemeral_data
+- 5567b39 refactor: Move nak code out of ephemeral_data
+- b5823c0 API: Promote APP_OWNEDED_QUEUE_DATA as default behaviour
+- 19596c9 build: Extend the OPT_OSDP_STATIC_PD switch to also include CP
+- 04a0851 API: Hoist channel into struct osdp to support only multi-drop PDs
+- b07d9ff python: Fix pypi upload due unavailability of get/set raised exception < 3.12
+- eb7ebda chore: Fix CI after nodejs 20 actions deprecation

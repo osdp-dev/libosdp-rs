@@ -6,15 +6,22 @@ pub const OSDP_FLAG_IGN_UNSOLICITED: u32 = 262144;
 pub const OSDP_FLAG_ENABLE_NOTIFICATION: u32 = 524288;
 pub const OSDP_FLAG_CAPTURE_PACKETS: u32 = 1048576;
 pub const OSDP_FLAG_ALLOW_EMPTY_ENCRYPTED_DATA_BLOCK: u32 = 2097152;
+pub const OSDP_FLAG_BIOREADR_MULTIPART: u32 = 4194304;
 pub const OSDP_STATUS_REPORT_MAX_LEN: u32 = 64;
 pub const OSDP_CMD_TEXT_MAX_LEN: u32 = 32;
 pub const OSDP_CMD_KEYSET_KEY_MAX_LEN: u32 = 32;
 pub const OSDP_CMD_MFG_MAX_DATALEN: u32 = 64;
-pub const OSDP_CMD_FILE_TX_FLAG_CANCEL: u32 = 2147483648;
+pub const OSDP_CMD_BIOMATCH_MAX_TEMPLATE_LEN: u32 = 128;
+pub const OSDP_PIV_DATA_MAX_LEN: u32 = 256;
+pub const OSDP_TRS_APDU_MAX_LEN: u32 = 258;
+pub const OSDP_TRS_CSN_MAX_LEN: u32 = 32;
+pub const OSDP_TRS_PROTOCOL_DATA_MAX_LEN: u32 = 64;
 pub const OSDP_CMD_FLAG_BROADCAST: u32 = 1;
 pub const OSDP_EVENT_CARDREAD_MAX_DATALEN: u32 = 64;
 pub const OSDP_EVENT_KEYPRESS_MAX_DATALEN: u32 = 64;
 pub const OSDP_EVENT_MFGREP_MAX_DATALEN: u32 = 128;
+pub const OSDP_EVENT_MFGSTAT_MAX_DATALEN: u32 = 128;
+pub const OSDP_EVENT_BIOREADR_MAX_TEMPLATE_LEN: u32 = 256;
 #[doc = " Dummy."]
 pub const osdp_pd_cap_function_code_e_OSDP_PD_CAP_UNUSED: osdp_pd_cap_function_code_e = 0;
 #[doc = " This function indicates the ability to monitor the status of a switch\n using a two-wire electrical connection between the PD and the switch.\n The on/off position of the switch indicates the state of an external\n device.\n\n The PD may simply resolve all circuit states to an open/closed\n status, or it may implement supervision of the monitoring circuit. A\n supervised circuit is able to indicate circuit fault status in\n addition to open/closed status."]
@@ -92,7 +99,7 @@ pub type osdp_pd_nak_code_e = ::core::ffi::c_uchar;
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_pd_cap {
     #[doc = " Capability function code. See @ref osdp_pd_cap_function_code_e"]
-    pub function_code: u8,
+    pub function_code: osdp_pd_cap_function_code_e,
     #[doc = " A function_code dependent number that indicates what the PD can do\n with this capability."]
     pub compliance_level: u8,
     #[doc = " Number of such capability entities in PD"]
@@ -121,15 +128,7 @@ pub type osdp_read_fn_t = ::core::option::Option<
         maxlen: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int,
 >;
-#[doc = " @brief Pointer to function used to receive a full packet buffer.\n The callee returns a pointer and a max_len up to which LibOSDP may\n access the buffer. The caller must invoke release_pkt() when done.\n\n @param data for use by underlying layers. osdp_channel::data is passed\n @param buf output pointer to the packet buffer\n @param max_len output maximum length LibOSDP may touch in this buffer\n @return 0 when a complete packet is available; non-zero otherwise"]
-pub type osdp_read_pkt_fn_t = ::core::option::Option<
-    unsafe extern "C" fn(
-        data: *mut ::core::ffi::c_void,
-        buf: *mut *const u8,
-        max_len: *mut ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int,
->;
-#[doc = " @brief pointer to function that sends byte array into some channel. This\n function should be non-blocking.\n\n @param data for use by underlying layers. osdp_channel::data is passed\n @param buf byte array to be sent\n @param len number of bytes in `buf`\n\n @retval +ve: number of bytes sent. must be <= `len`\n @retval -ve on errors\n\n @note For now, LibOSDP expects method to write/queue all or no bytes over\n the channel per-invocation; ie., it does not support partial writes and is a\n known limitation. Since an OSDP packet isn't so large, and typical TX\n buffers are much larger than that, it's not as bad as it sounds and hence\n not on the priority list to be fixed."]
+#[doc = " @brief pointer to function that sends byte array into some channel. This\n function must be non-blocking.\n\n @param data for use by underlying layers. osdp_channel::data is passed\n @param buf byte array to be sent\n @param len number of bytes in `buf`\n\n @retval len    all `len` bytes queued for transmission\n @retval 0      transient unavailability: channel is momentarily not ready\n                to accept this packet (e.g., half-duplex bus turnaround\n                gap not elapsed, previous TX still draining). LibOSDP will\n                re-invoke this callback on the next refresh with the same\n                finalized buffer; no rebuild, no state advance.\n @retval < 0    fatal error; the packet is dropped.\n\n @note LibOSDP does not support partial writes. The callback must queue\n either the entire buffer (return `len`) or none of it (return 0 for\n retry-later, or a negative value for a fatal error)."]
 pub type osdp_write_fn_t = ::core::option::Option<
     unsafe extern "C" fn(
         data: *mut ::core::ffi::c_void,
@@ -143,27 +142,18 @@ pub type osdp_flush_fn_t =
 #[doc = " @brief pointer to function that closes the underlying channel. This call is\n made when LibOSDP is terminating, once per PD.\n\n @param data for use by underlying layers. osdp_channel::data is passed"]
 pub type osdp_close_fn_t =
     ::core::option::Option<unsafe extern "C" fn(data: *mut ::core::ffi::c_void)>;
-#[doc = " @brief Pointer to function used to release a buffer returned by recv_pkt().\n\n @param data for use by underlying layers. osdp_channel::data is passed\n @param buf pointer that was returned by recv_pkt()"]
-pub type osdp_release_pkt_fn_t =
-    ::core::option::Option<unsafe extern "C" fn(data: *mut ::core::ffi::c_void, buf: *const u8)>;
 #[doc = " @brief User defined communication channel abstraction for OSDP devices.\n The methods for read/write/flush are expected to be non-blocking."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_channel {
     #[doc = " pointer to a block of memory that will be passed to the\n send/receive/flush method. This is optional (can be set to NULL)"]
     pub data: *mut ::core::ffi::c_void,
-    #[doc = " channel_id; On multi-drop networks, more than one PD can share the\n same channel (read/write/flush pointers). On such networks, the\n channel_id is used to lock a PD to a channel. On multi-drop\n networks, this `id` must non-zero and be unique for each bus."]
-    pub id: ::core::ffi::c_int,
     #[doc = " Pointer to function used to receive osdp packet data"]
     pub recv: osdp_read_fn_t,
-    #[doc = " Pointer to function used to receive a full packet buffer (optional)"]
-    pub recv_pkt: osdp_read_pkt_fn_t,
     #[doc = " Pointer to function used to send osdp packet data"]
     pub send: osdp_write_fn_t,
     #[doc = " Pointer to function used to flush the channel (optional)"]
     pub flush: osdp_flush_fn_t,
-    #[doc = " Pointer to function used to release recv_pkt() data (optional)"]
-    pub release_pkt: osdp_release_pkt_fn_t,
     #[doc = " Pointer to function used to close the channel (optional)"]
     pub close: osdp_close_fn_t,
 }
@@ -174,18 +164,16 @@ pub struct osdp_pd_info_t {
     #[doc = " User provided name for this PD (log messages include this name)"]
     pub name: *const ::core::ffi::c_char,
     #[doc = " Can be one of 9600/19200/38400/57600/115200/230400"]
-    pub baud_rate: ::core::ffi::c_int,
+    pub baud_rate: u32,
     #[doc = " 7 bit PD address. the rest of the bits are ignored. The special\n address 0x7F is used for broadcast. So there can be 2^7-1 devices on\n a multi-drop channel"]
     pub address: ::core::ffi::c_int,
     #[doc = " Used to modify the way the context is setup. See `OSDP_FLAG_*`\n macros."]
-    pub flags: ::core::ffi::c_int,
+    pub flags: u32,
     #[doc = " Static information that the PD reports to the CP when it received a\n `CMD_ID`. These information must be populated by a PD application."]
     pub id: osdp_pd_id,
-    #[doc = " This is a pointer to an array of structures containing the PD'\n capabilities. Use { -1, 0, 0 } to terminate the array. This is used\n only PD mode of operation"]
+    #[doc = " This is a pointer to an array of structures containing the PD'\n capabilities. Use { OSDP_PD_CAP_SENTINEL, 0, 0 } to terminate the\n array. This is used only PD mode of operation"]
     pub cap: *const osdp_pd_cap,
-    #[doc = " Communication channel ops structure, containing send/recv function\n pointers"]
-    pub channel: osdp_channel,
-    #[doc = " Pointer to 16 bytes of Secure Channel Base Key for the PD. If\n non-null, this is used to set-up the secure channel."]
+    #[doc = " Pointer to 16 bytes of Secure Channel Base Key for the PD. If\n non-null, this is used to set-up the secure channel.\n\n When NULL, the secure channel is disabled for this PD and the link\n runs in plain text. The one exception is a PD that also passes\n @ref OSDP_FLAG_INSTALL_MODE, which brings the channel up on SCBK-D\n so a CP can provision the real key. Passing NULL with\n @ref OSDP_FLAG_ENFORCE_SECURE fails setup."]
     pub scbk: *const u8,
 }
 #[doc = " @brief To keep the OSDP internal data structures from polluting the exposed\n headers, they are typedefed to void before sending them to the upper layers.\n This level of abstraction looked reasonable as _technically_ no one should\n attempt to modify it outside of the LibOSDP and their definition may change\n at any time."]
@@ -194,31 +182,185 @@ pub type osdp_t = ::core::ffi::c_void;
 pub const osdp_status_report_type_OSDP_STATUS_REPORT_INPUT: osdp_status_report_type = 0;
 #[doc = " @brief Status report of the output attached the PD"]
 pub const osdp_status_report_type_OSDP_STATUS_REPORT_OUTPUT: osdp_status_report_type = 1;
-#[doc = " @brief Local tamper and power status report\n\n Bit-0: tamper\n Bit-1: power"]
+#[doc = " @brief Local tamper and power status report\n\n Always two entries, one byte each: report[0] is tamper, report[1] is\n power."]
 pub const osdp_status_report_type_OSDP_STATUS_REPORT_LOCAL: osdp_status_report_type = 2;
-#[doc = " @brief Remote tamper and power status report\n\n Bit-0: tamper\n Bit-1: power"]
-pub const osdp_status_report_type_OSDP_STATUS_REPORT_REMOTE: osdp_status_report_type = 3;
+#[doc = " @brief Reader tamper status report\n\n One byte per attached reader (see OSDP_PD_CAP_READERS); report[i] is\n the status of reader i: 0 = normal, 1 = not connected, 2 = tamper."]
+pub const osdp_status_report_type_OSDP_STATUS_REPORT_READER: osdp_status_report_type = 3;
 #[doc = " @brief OSDP Status report types"]
 pub type osdp_status_report_type = ::core::ffi::c_uchar;
-#[doc = " @brief Status report structure. Used by OSDP_CMD_STATUS and\n OSDP_EVENT_STATUS. In case of command, it is used to send a query to the PD\n while in the case of events, the PD responds back with this structure.\n\n This can is used by the PD to indicate various status change reports. Upto a\n maximum of 32 statuses can be reported using this API."]
+#[doc = " @brief Status report structure. Used by OSDP_CMD_STATUS and\n OSDP_EVENT_STATUS. In case of command, it is used to send a query to the PD\n while in the case of events, the PD responds back with this structure.\n\n The report carries one byte per tracked entity and must be full (no partial\n reports), so nr_entries must exactly match what the PD supports for the given\n status type: the advertised capability count for input\n (OSDP_PD_CAP_CONTACT_STATUS_MONITORING), output (OSDP_PD_CAP_OUTPUT_CONTROL),\n and reader (OSDP_PD_CAP_READERS) status; and exactly two (tamper, power) for\n local status. A status event whose entry count does not match is rejected by\n osdp_pd_submit_event()."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_status_report {
     #[doc = " The kind of event to report see `enum osdp_event_status_type_e`"]
     pub type_: osdp_status_report_type,
-    #[doc = " Number of valid bits in `status`"]
+    #[doc = " Number of valid entries in `report`"]
     pub nr_entries: ::core::ffi::c_int,
-    #[doc = " Status report"]
+    #[doc = " Status report; one byte per entry"]
     pub report: [u8; 64usize],
 }
+#[doc = "< 0x00 Default"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_NOT_SPECIFIED: osdp_biometric_type_e = 0;
+#[doc = "< 0x01"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_RIGHT_THUMB_PRINT: osdp_biometric_type_e = 1;
+#[doc = "< 0x02"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_RIGHT_INDEX_FINGER_PRINT: osdp_biometric_type_e = 2;
+#[doc = "< 0x03"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_RIGHT_MIDDLE_FINGER_PRINT: osdp_biometric_type_e = 3;
+#[doc = "< 0x04"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_RIGHT_RING_FINGER_PRINT: osdp_biometric_type_e = 4;
+#[doc = "< 0x05"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_RIGHT_LITTLE_FINGER_PRINT: osdp_biometric_type_e = 5;
+#[doc = "< 0x06"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_LEFT_THUMB_PRINT: osdp_biometric_type_e = 6;
+#[doc = "< 0x07"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_LEFT_INDEX_FINGER_PRINT: osdp_biometric_type_e = 7;
+#[doc = "< 0x08"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_LEFT_MIDDLE_FINGER_PRINT: osdp_biometric_type_e = 8;
+#[doc = "< 0x09"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_LEFT_RING_FINGER_PRINT: osdp_biometric_type_e = 9;
+#[doc = "< 0x0A"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_LEFT_LITTLE_FINGER_PRINT: osdp_biometric_type_e = 10;
+#[doc = "< 0x0B"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_RIGHT_IRIS_SCAN: osdp_biometric_type_e = 11;
+#[doc = "< 0x0C"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_RIGHT_RETINA_SCAN: osdp_biometric_type_e = 12;
+#[doc = "< 0x0D"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_LEFT_IRIS_SCAN: osdp_biometric_type_e = 13;
+#[doc = "< 0x0E"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_LEFT_RETINA_SCAN: osdp_biometric_type_e = 14;
+#[doc = "< 0x0F"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_FULL_FACE_IMAGE: osdp_biometric_type_e = 15;
+#[doc = "< 0x10"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_RIGHT_HAND_GEOMETRY: osdp_biometric_type_e = 16;
+#[doc = "< 0x11"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_LEFT_HAND_GEOMETRY: osdp_biometric_type_e = 17;
+#[doc = "< Max biometric type value"]
+pub const osdp_biometric_type_e_OSDP_BIO_TYPE_SENTINEL: osdp_biometric_type_e = 18;
+#[doc = " @brief Biometric type; the body part to scan. See OSDP spec Table 24."]
+pub type osdp_biometric_type_e = ::core::ffi::c_uchar;
+#[doc = " 0x00 Not specified; the PD scans using its default method and\n reports the format it used."]
+pub const osdp_biometric_format_e_OSDP_BIO_FMT_NOT_SPECIFIED: osdp_biometric_format_e = 0;
+#[doc = " 0x01 Raw fingerprint data as a PGM"]
+pub const osdp_biometric_format_e_OSDP_BIO_FMT_RAW_PGM: osdp_biometric_format_e = 1;
+#[doc = " 0x02 ANSI/INCITS 378 fingerprint template"]
+pub const osdp_biometric_format_e_OSDP_BIO_FMT_ANSI_INCITS_378: osdp_biometric_format_e = 2;
+#[doc = " Max biometric format value"]
+pub const osdp_biometric_format_e_OSDP_BIO_FMT_SENTINEL: osdp_biometric_format_e = 3;
+#[doc = " @brief Biometric data format. See OSDP spec Table 25."]
+pub type osdp_biometric_format_e = ::core::ffi::c_uchar;
+#[doc = "< Rest of the fields are valid"]
+pub const osdp_biometric_status_e_OSDP_BIO_STATUS_SUCCESS: osdp_biometric_status_e = 0;
+#[doc = "< The scan timed out"]
+pub const osdp_biometric_status_e_OSDP_BIO_STATUS_TIMEOUT: osdp_biometric_status_e = 1;
+#[doc = "< Unknown error"]
+pub const osdp_biometric_status_e_OSDP_BIO_STATUS_UNKNOWN_ERROR: osdp_biometric_status_e = 255;
+#[doc = " @brief Outcome of a biometric scan, as reported by the PD."]
+pub type osdp_biometric_status_e = ::core::ffi::c_uchar;
+#[doc = " @brief Command sent from CP to instruct the PD to perform a biometric scan\n and return the scan data in an `OSDP_EVENT_BIOREADR` event.\n\n @note When the reply is multi-part (see @ref OSDP_FLAG_BIOREADR_MULTIPART),\n this command completes once the template has been reassembled, not when its\n first fragment arrives -- unless another feature engine (a file transfer,\n say) is already running an operation on this PD, in which case the command\n completes when the first fragment is accepted, as it does without the flag."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_cmd_bioread {
+    #[doc = " Target reader: 0 is this PD, 1 the first attached reader, and so on.\n Must fit within the PD's OSDP_PD_CAP_READERS capability."]
+    pub reader: u8,
+    #[doc = " Body part to scan. See @ref osdp_biometric_type_e"]
+    pub type_: osdp_biometric_type_e,
+    #[doc = " Format of the data to be returned. See @ref osdp_biometric_format_e"]
+    pub format: osdp_biometric_format_e,
+    #[doc = " Normalised scan quality"]
+    pub quality: u8,
+}
+#[doc = " @brief Command sent from CP to instruct the PD to perform a biometric scan\n and match it against @a data, returning the result in an\n `OSDP_EVENT_BIOMATCHR` event."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_cmd_biomatch {
+    #[doc = " Target reader: 0 is this PD, 1 the first attached reader, and so on.\n Must fit within the PD's OSDP_PD_CAP_READERS capability."]
+    pub reader: u8,
+    #[doc = " Body part to scan. See @ref osdp_biometric_type_e"]
+    pub type_: osdp_biometric_type_e,
+    #[doc = " Format of the attached template. See @ref osdp_biometric_format_e"]
+    pub format: osdp_biometric_format_e,
+    #[doc = " Normalised threshold required for accepting the match"]
+    pub quality: u8,
+    #[doc = " Length of the template in @a data"]
+    pub length: u16,
+    #[doc = " Template to match the scan against"]
+    pub data: [u8; 128usize],
+}
+#[doc = " @brief Set the PD's local time and date (osdp_TDSET). This command is\n obsolete in current editions of the OSDP specification; LibOSDP supports\n it for interop with legacy devices. The PD is expected to have declared\n the @ref OSDP_PD_CAP_TIME_KEEPING capability to accept this command."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_cmd_tdset {
+    #[doc = " Full year in local time; eg., 2026"]
+    pub year: u16,
+    #[doc = " Month of year; 1 - 12"]
+    pub month: u8,
+    #[doc = " Day of month; 1 - 31"]
+    pub day: u8,
+    #[doc = " Hours since midnight; 0 - 23"]
+    pub hour: u8,
+    #[doc = " Minutes past the hour; 0 - 59"]
+    pub minute: u8,
+    #[doc = " Seconds past the minute; 0 - 59"]
+    pub second: u8,
+}
+#[doc = " @brief Command sent from CP to retrieve the contents of a PIV object from\n a smartcard attached to the PD (osdp_PIVDATA). The PD returns the data in\n an `OSDP_EVENT_PIVDATAR` event, reassembled from the multi-part reply."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_cmd_pivdata {
+    #[doc = " PIV Object ID per NIST SP 800-73-4 Part 1"]
+    pub oid: [u8; 3usize],
+    #[doc = " PIV element ID within the object"]
+    pub element: u8,
+    #[doc = " Offset within the requested element"]
+    pub offset: u8,
+}
+#[doc = " @brief Command sent from CP to have the PD direct a cryptographic\n challenge to its smartcard (osdp_GENAUTH / osdp_CRAUTH). The challenge is\n carried as an OSDP multi-part message; the PD returns the response in an\n `OSDP_EVENT_GENAUTHR` (resp. `OSDP_EVENT_CRAUTHR`) event."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_cmd_auth {
+    #[doc = " Selected algorithm per ISO 7816-4:2005 7.5.5. On the wire this is\n carried in the first fragment only."]
+    pub algorithm: u8,
+    #[doc = " Key reference; see @a algorithm. First fragment only on the wire."]
+    pub key: u8,
+    #[doc = " Challenge length in @a data; must be non-zero"]
+    pub length: u16,
+    #[doc = " Cryptographic challenge payload"]
+    pub data: [u8; 256usize],
+}
+#[doc = " Do not alter this output"]
+pub const osdp_cmd_output_control_code_e_OSDP_CMD_OUTPUT_CC_NOP: osdp_cmd_output_control_code_e = 0;
+#[doc = " Set the permanent state to OFF, abort timed operation (if any)"]
+pub const osdp_cmd_output_control_code_e_OSDP_CMD_OUTPUT_CC_PERMANENT_OFF:
+    osdp_cmd_output_control_code_e = 1;
+#[doc = " Set the permanent state to ON, abort timed operation (if any)"]
+pub const osdp_cmd_output_control_code_e_OSDP_CMD_OUTPUT_CC_PERMANENT_ON:
+    osdp_cmd_output_control_code_e = 2;
+#[doc = " Set the permanent state to OFF, allow timed operation to complete"]
+pub const osdp_cmd_output_control_code_e_OSDP_CMD_OUTPUT_CC_PERMANENT_OFF_ALLOW_TIMED:
+    osdp_cmd_output_control_code_e = 3;
+#[doc = " Set the permanent state to ON, allow timed operation to complete"]
+pub const osdp_cmd_output_control_code_e_OSDP_CMD_OUTPUT_CC_PERMANENT_ON_ALLOW_TIMED:
+    osdp_cmd_output_control_code_e = 4;
+#[doc = " Set the temporary state to ON, resume perm state on timeout"]
+pub const osdp_cmd_output_control_code_e_OSDP_CMD_OUTPUT_CC_TEMPORARY_ON:
+    osdp_cmd_output_control_code_e = 5;
+#[doc = " Set the temporary state to OFF, resume perm state on timeout"]
+pub const osdp_cmd_output_control_code_e_OSDP_CMD_OUTPUT_CC_TEMPORARY_OFF:
+    osdp_cmd_output_control_code_e = 6;
+#[doc = " Max value"]
+pub const osdp_cmd_output_control_code_e_OSDP_CMD_OUTPUT_CC_SENTINEL:
+    osdp_cmd_output_control_code_e = 7;
+#[doc = " @brief What an output command does to the output line."]
+pub type osdp_cmd_output_control_code_e = ::core::ffi::c_uchar;
 #[doc = " @brief Command sent from CP to Control digital output of PD."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_cmd_output {
     #[doc = " 0 = First Output, 1 = Second Output, etc."]
     pub output_no: u8,
-    #[doc = " One of the following:\n    0 - NOP – do not alter this output\n    1 - set the permanent state to OFF, abort timed operation (if any)\n    2 - set the permanent state to ON, abort timed operation (if any)\n    3 - set the permanent state to OFF, allow timed operation to complete\n    4 - set the permanent state to ON, allow timed operation to complete\n    5 - set the temporary state to ON, resume perm state on timeout\n    6 - set the temporary state to OFF, resume permanent state on timeout"]
-    pub control_code: u8,
+    #[doc = " What to do to the output line."]
+    pub control_code: osdp_cmd_output_control_code_e,
     #[doc = " Time in units of 100 ms"]
     pub timer_count: u16,
 }
@@ -242,20 +384,45 @@ pub const osdp_led_color_e_OSDP_LED_COLOR_WHITE: osdp_led_color_e = 7;
 pub const osdp_led_color_e_OSDP_LED_COLOR_SENTINEL: osdp_led_color_e = 8;
 #[doc = " @brief LED Colors as specified in OSDP for the on_color/off_color\n parameters."]
 pub type osdp_led_color_e = ::core::ffi::c_uchar;
+#[doc = " Do not alter this LED's temporary settings"]
+pub const osdp_cmd_led_temporary_control_code_e_OSDP_CMD_LED_TEMPORARY_CC_NOP:
+    osdp_cmd_led_temporary_control_code_e = 0;
+#[doc = " Cancel any temporary operation and display this LED's permanent\n state immediately"]
+pub const osdp_cmd_led_temporary_control_code_e_OSDP_CMD_LED_TEMPORARY_CC_CANCEL:
+    osdp_cmd_led_temporary_control_code_e = 1;
+#[doc = " Set the temporary state as given and start timer immediately"]
+pub const osdp_cmd_led_temporary_control_code_e_OSDP_CMD_LED_TEMPORARY_CC_SET:
+    osdp_cmd_led_temporary_control_code_e = 2;
+#[doc = " Max value"]
+pub const osdp_cmd_led_temporary_control_code_e_OSDP_CMD_LED_TEMPORARY_CC_SENTINEL:
+    osdp_cmd_led_temporary_control_code_e = 3;
+#[doc = " @brief What the temporary block of an LED command does."]
+pub type osdp_cmd_led_temporary_control_code_e = ::core::ffi::c_uchar;
+#[doc = " Do not alter this LED's permanent settings"]
+pub const osdp_cmd_led_permanent_control_code_e_OSDP_CMD_LED_PERMANENT_CC_NOP:
+    osdp_cmd_led_permanent_control_code_e = 0;
+#[doc = " Set the permanent state as given"]
+pub const osdp_cmd_led_permanent_control_code_e_OSDP_CMD_LED_PERMANENT_CC_SET:
+    osdp_cmd_led_permanent_control_code_e = 1;
+#[doc = " Max value"]
+pub const osdp_cmd_led_permanent_control_code_e_OSDP_CMD_LED_PERMANENT_CC_SENTINEL:
+    osdp_cmd_led_permanent_control_code_e = 2;
+#[doc = " @brief What the permanent block of an LED command does."]
+pub type osdp_cmd_led_permanent_control_code_e = ::core::ffi::c_uchar;
 #[doc = " @brief LED params sub-structure. Part of LED command. See @ref osdp_cmd_led."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_cmd_led_params {
-    #[doc = " Control code.\n\n Temporary Control Code:\n - 0 - NOP - do not alter this LED's temporary settings.\n - 1 - Cancel any temporary operation and display this LED's\n       permanent state immediately.\n - 2 - Set the temporary state as given and start timer immediately.\n\n Permanent Control Code:\n - 0 - NOP - do not alter this LED's permanent settings.\n - 1 - Set the permanent state as given."]
+    #[doc = " Control code.\n\n The block this struct is used as decides which enumeration applies:\n @ref osdp_cmd_led_temporary_control_code_e for osdp_cmd_led::temporary,\n @ref osdp_cmd_led_permanent_control_code_e for osdp_cmd_led::permanent.\n They do not agree numerically, so the two cannot share a type."]
     pub control_code: u8,
     #[doc = " The ON duration of the flash, in units of 100 ms."]
     pub on_count: u8,
     #[doc = " The OFF duration of the flash, in units of 100 ms."]
     pub off_count: u8,
     #[doc = " Color to set during the ON timer (see @ref osdp_led_color_e)."]
-    pub on_color: u8,
+    pub on_color: osdp_led_color_e,
     #[doc = " Color to set during the OFF timer (see @ref osdp_led_color_e)."]
-    pub off_color: u8,
+    pub off_color: osdp_led_color_e,
     #[doc = " Time in units of 100 ms (only for temporary mode)."]
     pub timer_count: u16,
 }
@@ -263,7 +430,7 @@ pub struct osdp_cmd_led_params {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_cmd_led {
-    #[doc = " Reader number. 0 = First Reader, 1 = Second Reader, etc."]
+    #[doc = " Target reader: 0 is this PD, 1 the first attached reader, and so on.\n Must fit within the PD's OSDP_PD_CAP_READERS capability."]
     pub reader: u8,
     #[doc = " LED number. 0 = first LED, 1 = second LED, etc."]
     pub led_number: u8,
@@ -272,14 +439,27 @@ pub struct osdp_cmd_led {
     #[doc = " Permanent LED status descriptor."]
     pub permanent: osdp_cmd_led_params,
 }
+#[doc = " No tone"]
+pub const osdp_cmd_buzzer_control_code_e_OSDP_CMD_BUZZER_CC_NO_TONE:
+    osdp_cmd_buzzer_control_code_e = 0;
+#[doc = " Silence the buzzer"]
+pub const osdp_cmd_buzzer_control_code_e_OSDP_CMD_BUZZER_CC_OFF: osdp_cmd_buzzer_control_code_e = 1;
+#[doc = " Sound the reader's default tone"]
+pub const osdp_cmd_buzzer_control_code_e_OSDP_CMD_BUZZER_CC_DEFAULT_TONE:
+    osdp_cmd_buzzer_control_code_e = 2;
+#[doc = " Max value"]
+pub const osdp_cmd_buzzer_control_code_e_OSDP_CMD_BUZZER_CC_SENTINEL:
+    osdp_cmd_buzzer_control_code_e = 3;
+#[doc = " @brief What a buzzer command does."]
+pub type osdp_cmd_buzzer_control_code_e = ::core::ffi::c_uchar;
 #[doc = " @brief Sent from CP to control the behaviour of a buzzer in the PD."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_cmd_buzzer {
-    #[doc = " Reader number. 0 = First Reader, 1 = Second Reader, etc."]
+    #[doc = " Target reader: 0 is this PD, 1 the first attached reader, and so on.\n Must fit within the PD's OSDP_PD_CAP_READERS capability."]
     pub reader: u8,
-    #[doc = " Control code.\n - 0 - no tone\n - 1 - off\n - 2 - default tone\n - 3+ - TBD"]
-    pub control_code: u8,
+    #[doc = " What the buzzer should do."]
+    pub control_code: osdp_cmd_buzzer_control_code_e,
     #[doc = " The ON duration of the sound, in units of 100 ms."]
     pub on_count: u8,
     #[doc = " The OFF duration of the sound, in units of 100 ms."]
@@ -287,14 +467,30 @@ pub struct osdp_cmd_buzzer {
     #[doc = " The number of times to repeat the ON/OFF cycle; 0: forever."]
     pub rep_count: u8,
 }
+#[doc = " Permanent text, no wrap"]
+pub const osdp_cmd_text_control_code_e_OSDP_CMD_TEXT_CC_PERMANENT_NO_WRAP:
+    osdp_cmd_text_control_code_e = 1;
+#[doc = " Permanent text, with wrap"]
+pub const osdp_cmd_text_control_code_e_OSDP_CMD_TEXT_CC_PERMANENT_WRAP:
+    osdp_cmd_text_control_code_e = 2;
+#[doc = " Temporary text, no wrap; reverts after osdp_cmd_text::temp_time"]
+pub const osdp_cmd_text_control_code_e_OSDP_CMD_TEXT_CC_TEMPORARY_NO_WRAP:
+    osdp_cmd_text_control_code_e = 3;
+#[doc = " Temporary text, with wrap; reverts after osdp_cmd_text::temp_time"]
+pub const osdp_cmd_text_control_code_e_OSDP_CMD_TEXT_CC_TEMPORARY_WRAP:
+    osdp_cmd_text_control_code_e = 4;
+#[doc = " Max value"]
+pub const osdp_cmd_text_control_code_e_OSDP_CMD_TEXT_CC_SENTINEL: osdp_cmd_text_control_code_e = 5;
+#[doc = " @brief How a text command displays its message.\n\n @note Unlike the other control codes, these are 1-indexed; zero is not a\n valid value."]
+pub type osdp_cmd_text_control_code_e = ::core::ffi::c_uchar;
 #[doc = " @brief Command to manipulate any display units that the PD supports."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_cmd_text {
-    #[doc = " Reader number. 0 = First Reader, 1 = Second Reader, etc."]
+    #[doc = " Target reader: 0 is this PD, 1 the first attached reader, and so on.\n Must fit within the PD's OSDP_PD_CAP_READERS capability."]
     pub reader: u8,
-    #[doc = " Control code.\n - 1 - permanent text, no wrap\n - 2 - permanent text, with wrap\n - 3 - temp text, no wrap\n - 4 - temp text, with wrap"]
-    pub control_code: u8,
+    #[doc = " How the message should be displayed."]
+    pub control_code: osdp_cmd_text_control_code_e,
     #[doc = " Duration to display temporary text, in seconds"]
     pub temp_time: u8,
     #[doc = " Row to display the first character (1-indexed)"]
@@ -343,8 +539,63 @@ pub struct osdp_cmd_mfg {
 pub struct osdp_cmd_file_tx {
     #[doc = " Pre-agreed file ID between CP and PD"]
     pub id: ::core::ffi::c_int,
-    #[doc = " Reserved and set to zero by OSDP spec.\n\n @note: The upper bits are used by libosdp internally (IOW, not sent\n over the OSDP bus). Currently the following flags are defined:\n\n - @ref OSDP_CMD_FILE_TX_FLAG_CANCEL"]
+    #[doc = " Reserved and set to zero by OSDP spec.\n\n @note: The upper bits are used by libosdp internally (IOW, not sent\n over the OSDP bus). No application-settable flags are defined; to\n stop a running transfer, call osdp_cp_cancel()."]
     pub flags: u32,
+}
+#[doc = " Secure Channel state change. Payload: `sc_status`\n (@ref osdp_notification_sc_status).\n\n Fires on both CP and PD. In CP mode it reports the state of the\n SC session with the addressed PD; in PD mode it reports the state\n of the SC session with the CP."]
+pub const osdp_notification_type_OSDP_NOTIFICATION_SC_STATUS: osdp_notification_type = 0;
+#[doc = " Peer link state change. Payload: `pd_status`\n (@ref osdp_notification_pd_status).\n\n In CP mode: the addressed PD has gone online or offline. Fires on\n every such transition and tracks what osdp_get_status_mask()\n reports, so a PD dropping out of ONLINE to re-run the secure\n channel handshake is reported offline and then online again --\n commands are refused for that whole window.\n In PD mode: the CP has become reachable (inbound traffic\n observed) or unreachable (no CP activity for\n OSDP_PD_ONLINE_TOUT_MS)."]
+pub const osdp_notification_type_OSDP_NOTIFICATION_PD_STATUS: osdp_notification_type = 1;
+#[doc = " Multipart transfer opened. `mp` carries mp_type/object_id/total."]
+pub const osdp_notification_type_OSDP_NOTIFICATION_MP_START: osdp_notification_type = 2;
+#[doc = " Multipart fragment committed. `mp.offset`/`mp.total` advance."]
+pub const osdp_notification_type_OSDP_NOTIFICATION_MP_PROGRESS: osdp_notification_type = 3;
+#[doc = " Multipart transfer terminated. `mp.outcome` is set."]
+pub const osdp_notification_type_OSDP_NOTIFICATION_MP_DONE: osdp_notification_type = 4;
+#[doc = " PD ID collected (CP mode). Payload: `pd_id` (@ref osdp_pd_id).\n\n Fires when the CP reads a PD's identity (osdp_PDID) during the INIT\n handshake and it differs from the last one seen for that PD: on\n first contact, or if the device answering an address changed. A\n reconnect that reports the same identity is silent."]
+pub const osdp_notification_type_OSDP_NOTIFICATION_PD_ID: osdp_notification_type = 5;
+#[doc = " TRS card session state change (CP only). Payload: `trs_status`\n (@ref osdp_notification_trs_status).\n\n Fires when the reader enters transparent mode (OPENED), and once more\n when the session ends, either because a STOP was honoured (CLOSED) or\n because it could not be established or was cut short (FAILED)."]
+pub const osdp_notification_type_OSDP_NOTIFICATION_TRS_STATUS: osdp_notification_type = 6;
+#[doc = " @brief LibOSDP notification type\n\n Delivered to the application in CP mode as an @ref osdp_event with type\n @ref OSDP_EVENT_NOTIFICATION and in PD mode as an @ref osdp_cmd with id\n @ref OSDP_CMD_NOTIFICATION. In both cases the payload is a\n @ref osdp_notification. Gated by @ref OSDP_FLAG_ENABLE_NOTIFICATION."]
+pub type osdp_notification_type = ::core::ffi::c_uchar;
+#[doc = "< Transfer completed successfully"]
+pub const osdp_mp_outcome_OSDP_MP_OUTCOME_OK: osdp_mp_outcome = 0;
+#[doc = "< File transfer: OK; PD will now reset"]
+pub const osdp_mp_outcome_OSDP_MP_OUTCOME_OK_REBOOTING: osdp_mp_outcome = 1;
+#[doc = "< Transfer aborted (local or remote)"]
+pub const osdp_mp_outcome_OSDP_MP_OUTCOME_ABORTED: osdp_mp_outcome = 2;
+#[doc = "< File transfer: PD did not recognize contents"]
+pub const osdp_mp_outcome_OSDP_MP_OUTCOME_UNRECOGNIZED: osdp_mp_outcome = 3;
+#[doc = "< File transfer: PD rejected data as malformed"]
+pub const osdp_mp_outcome_OSDP_MP_OUTCOME_INVALID: osdp_mp_outcome = 4;
+#[doc = " @brief Outcome reported by OSDP_NOTIFICATION_MP_DONE.\n\n OSDP_MP_OUTCOME_OK and OSDP_MP_OUTCOME_ABORTED apply to any multipart\n transfer. The remaining values are file-transfer specific: only a transfer\n of @ref OSDP_MP_MSG_FILE_TRANSFER ever reports them."]
+pub type osdp_mp_outcome = ::core::ffi::c_uchar;
+#[doc = "< File transfer"]
+pub const osdp_mp_msg_type_OSDP_MP_MSG_FILE_TRANSFER: osdp_mp_msg_type = 1;
+#[doc = "< PIV data"]
+pub const osdp_mp_msg_type_OSDP_MP_MSG_PIV: osdp_mp_msg_type = 2;
+#[doc = "< General auth"]
+pub const osdp_mp_msg_type_OSDP_MP_MSG_GENAUTH: osdp_mp_msg_type = 3;
+#[doc = "< Challenge/response auth"]
+pub const osdp_mp_msg_type_OSDP_MP_MSG_CRAUTH: osdp_mp_msg_type = 4;
+#[doc = "< Biometric read reply"]
+pub const osdp_mp_msg_type_OSDP_MP_MSG_BIOREAD: osdp_mp_msg_type = 5;
+#[doc = " @brief Which multipart message family a transfer belongs to."]
+pub type osdp_mp_msg_type = ::core::ffi::c_uchar;
+#[doc = " @brief Structured payload for OSDP_NOTIFICATION_MP_* notifications."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_mp_notification {
+    #[doc = "< Multipart family"]
+    pub mp_type: osdp_mp_msg_type,
+    #[doc = "< Per-family transfer id (e.g. file id for file transfer)"]
+    pub object_id: ::core::ffi::c_int,
+    #[doc = "< Full payload length"]
+    pub total: u32,
+    #[doc = "< Bytes transferred so far"]
+    pub offset: u32,
+    #[doc = "< Meaningful at MP_DONE"]
+    pub outcome: osdp_mp_outcome,
 }
 #[doc = "< Output control command"]
 pub const osdp_cmd_e_OSDP_CMD_OUTPUT: osdp_cmd_e = 1;
@@ -366,10 +617,288 @@ pub const osdp_cmd_e_OSDP_CMD_FILE_TX: osdp_cmd_e = 8;
 pub const osdp_cmd_e_OSDP_CMD_STATUS: osdp_cmd_e = 9;
 #[doc = "< Comset completed; Alias for OSDP_CMD_COMSET"]
 pub const osdp_cmd_e_OSDP_CMD_COMSET_DONE: osdp_cmd_e = 10;
+#[doc = "< LibOSDP notification (PD mode, synthesized)"]
+pub const osdp_cmd_e_OSDP_CMD_NOTIFICATION: osdp_cmd_e = 11;
+#[doc = "< Scan and send biometric data command"]
+pub const osdp_cmd_e_OSDP_CMD_BIOREAD: osdp_cmd_e = 12;
+#[doc = "< Scan and match biometric template command"]
+pub const osdp_cmd_e_OSDP_CMD_BIOMATCH: osdp_cmd_e = 13;
+#[doc = "< Time and date set command"]
+pub const osdp_cmd_e_OSDP_CMD_TDSET: osdp_cmd_e = 14;
+#[doc = "< Retrieve PIV object data command"]
+pub const osdp_cmd_e_OSDP_CMD_PIVDATA: osdp_cmd_e = 15;
+#[doc = "< General authenticate command"]
+pub const osdp_cmd_e_OSDP_CMD_GENAUTH: osdp_cmd_e = 16;
+#[doc = "< Challenge/response authenticate command"]
+pub const osdp_cmd_e_OSDP_CMD_CRAUTH: osdp_cmd_e = 17;
+#[doc = "< Transparent mode command"]
+pub const osdp_cmd_e_OSDP_CMD_XWR: osdp_cmd_e = 18;
 #[doc = "< Max command value"]
-pub const osdp_cmd_e_OSDP_CMD_SENTINEL: osdp_cmd_e = 11;
+pub const osdp_cmd_e_OSDP_CMD_SENTINEL: osdp_cmd_e = 19;
 #[doc = " @brief OSDP application exposed commands"]
 pub type osdp_cmd_e = ::core::ffi::c_uchar;
+#[doc = "< Open a card session"]
+pub const osdp_trs_cmd_e_OSDP_TRS_CMD_START: osdp_trs_cmd_e = 1;
+#[doc = "< Close the card session opened by START"]
+pub const osdp_trs_cmd_e_OSDP_TRS_CMD_STOP: osdp_trs_cmd_e = 2;
+#[doc = "< Send a C-APDU to the card"]
+pub const osdp_trs_cmd_e_OSDP_TRS_CMD_SEND_APDU: osdp_trs_cmd_e = 3;
+#[doc = "< EMV PIN entry"]
+pub const osdp_trs_cmd_e_OSDP_TRS_CMD_ENTER_PIN: osdp_trs_cmd_e = 4;
+#[doc = "< Scan for a card in the field"]
+pub const osdp_trs_cmd_e_OSDP_TRS_CMD_CARD_SCAN: osdp_trs_cmd_e = 5;
+#[doc = " @brief Transparent Reader Support (TRS) commands a CP application can issue to\n a smart card in the reader. Set in @c struct osdp_trs_cmd::command and\n submitted as an @c OSDP_CMD_XWR command.\n\n A card session is the band of commands between an @c OSDP_TRS_CMD_START and\n the matching @c OSDP_TRS_CMD_STOP, in submission order:\n\n     START, SEND_APDU, SEND_APDU, ..., STOP\n\n The library owns the wire handshakes the band implies (it negotiates\n transparent mode on START, and disconnects the card and restores the reader\n on STOP) and reports the session's progress as @c OSDP_NOTIFICATION_TRS_STATUS\n events. The band is enforced when a command is submitted, so misuse is an\n error from osdp_cp_submit_command() and never a command that runs and then\n has to be taken back: inside a band only TRS commands are accepted (anything\n else would interrupt the card transaction), and a card command is refused\n outside one (it would reach a reader that is not in transparent mode).\n\n To abandon a session and the APDUs still queued for it, flush the command\n queue (osdp_cp_flush_commands()) and then submit @c OSDP_TRS_CMD_STOP; the\n flushed APDUs are reported to the app individually. If the session ends on its\n own before its STOP is reached -- the reader rejects transparent mode, say --\n the APDUs left in the band are completed @c OSDP_COMPLETION_FLUSHED and an\n @c OSDP_TRS_SESSION_FAILED notification says why.\n\n Knowing @b when to open a band is the reader's job: a smart card entering\n the field is announced as an @c OSDP_EVENT_TRS card-info/card-present event,\n either spontaneously (some readers report cards in their default mode) or\n because a presence scan (osdp_cp_trs_scan_enable()) is briefly holding the\n reader in transparent mode. Either way, react by submitting a START; while\n the scan has the reader in transparent mode the new band adopts it directly,\n with no extra mode negotiation on the wire."]
+pub type osdp_trs_cmd_e = ::core::ffi::c_uchar;
+#[doc = "< Reader is in transparent mode; APDUs flow"]
+pub const osdp_trs_session_status_e_OSDP_TRS_SESSION_OPENED: osdp_trs_session_status_e = 0;
+#[doc = "< STOP honoured; reader restored"]
+pub const osdp_trs_session_status_e_OSDP_TRS_SESSION_CLOSED: osdp_trs_session_status_e = 1;
+#[doc = "< PD refused transparent mode, or the\n   session was aborted by a link error"]
+pub const osdp_trs_session_status_e_OSDP_TRS_SESSION_FAILED: osdp_trs_session_status_e = 2;
+#[doc = "< A presence-scan probe was refused by\n   the reader; probing continues with\n   exponential backoff"]
+pub const osdp_trs_session_status_e_OSDP_TRS_SCAN_SUSPENDED: osdp_trs_session_status_e = 3;
+#[doc = " The reader does not implement the mode-01 card scan, so the presence\n scan cannot ask whether a card is still there and falls back to\n whatever the reader volunteers on a poll. Raised at most once per\n connection, and only for readers that refuse the command.\n\n The practical consequence is that **card removal will not be\n reported**: many such readers hold a sighting for the rest of the\n transparent session. An application that needs to know when the card\n left must find out for itself, by sending a card command inside a\n session and treating its failure as the card being gone."]
+pub const osdp_trs_session_status_e_OSDP_TRS_SCAN_NO_DEPARTURE: osdp_trs_session_status_e = 4;
+#[doc = " @brief Life-cycle of a TRS card session, reported in the `trs_status`\n payload of an @c OSDP_NOTIFICATION_TRS_STATUS notification."]
+pub type osdp_trs_session_status_e = ::core::ffi::c_uchar;
+#[doc = " @brief Cadence of the background card presence scan\n (osdp_cp_trs_scan_enable()). A zero in any field selects that parameter's\n built-in default."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_trs_scan_params {
+    #[doc = " Time spent in the reader's default mode between probes, where\n ordinary credential reads work (default 200 ms). Restarted by\n ordinary card/keypad activity so a probe never cuts into an\n in-progress read.\n\n @note Shortening this makes the scan **more** aggressive, not less:\n the reader spends proportionally less of each cycle where ordinary\n credentials can be read. How short is too short depends on the baud\n rate, since a probe costs a fixed number of round trips rather than a\n fixed time -- at 38400 baud, 75 ms was enough to make a reader miss\n ordinary card reads outright."]
+    pub mode0_dwell_ms: u16,
+    #[doc = " Time spent per probe in transparent mode watching for a smart-card\n sighting (default 200 ms). Readers that answer the card scan report\n presence in a single round trip and need little more than that;\n readers that do not are watched for this long in the hope they\n volunteer a report of their own."]
+    pub mode1_dwell_ms: u16,
+    #[doc = " Once a probe sights a card, transparent mode is held this long\n (default 500 ms) waiting for the app to open a band in response;\n a band submitted within the hold adopts the reader as-is, with no\n extra mode negotiation on the wire."]
+    pub hold_ms: u16,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_trs_apdu {
+    #[doc = "< APDU length in bytes"]
+    pub length: u16,
+    #[doc = "< APDU bytes"]
+    pub data: [u8; 258usize],
+}
+#[doc = "< PIN digits as binary values"]
+pub const osdp_trs_pin_format_e_OSDP_TRS_PIN_FORMAT_BINARY: osdp_trs_pin_format_e = 1;
+#[doc = "< PIN digits as packed BCD"]
+pub const osdp_trs_pin_format_e_OSDP_TRS_PIN_FORMAT_BCD: osdp_trs_pin_format_e = 2;
+#[doc = "< PIN digits as ASCII characters"]
+pub const osdp_trs_pin_format_e_OSDP_TRS_PIN_FORMAT_ASCII: osdp_trs_pin_format_e = 3;
+#[doc = " @brief Encoding of the PIN digits the reader inserts into the C-APDU"]
+pub type osdp_trs_pin_format_e = ::core::ffi::c_uchar;
+#[doc = "< max_digits entered"]
+pub const osdp_trs_pin_complete_e_OSDP_TRS_PIN_COMPLETE_ON_MAX_DIGITS: osdp_trs_pin_complete_e = 1;
+#[doc = "< Validation (enter) key pressed"]
+pub const osdp_trs_pin_complete_e_OSDP_TRS_PIN_COMPLETE_ON_KEY: osdp_trs_pin_complete_e = 2;
+#[doc = "< Entry timed out"]
+pub const osdp_trs_pin_complete_e_OSDP_TRS_PIN_COMPLETE_ON_TIMEOUT: osdp_trs_pin_complete_e = 4;
+#[doc = " @brief Conditions that end PIN entry; OR them into\n @c osdp_trs_pin_entry::complete_on."]
+pub type osdp_trs_pin_complete_e = ::core::ffi::c_uchar;
+#[doc = " @brief TRS secure PIN entry request: the reader prompts the user for their\n PIN, inserts it into @a apdu as described by the layout fields below, and\n sends the result to the card.\n\n APDU positions are expressed in bits from the start of the APDU payload.\n Not every position is expressible on the wire: it must be byte-aligned (up\n to 120 bits) or fall within the first 15 bits; anything else fails the\n command submission."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_trs_pin_entry {
+    #[doc = "< First-digit timeout in seconds (0 = reader default)"]
+    pub timeout_initial: u8,
+    #[doc = "< Per-digit timeout in seconds after the first key"]
+    pub timeout_digit: u8,
+    pub pin_block: osdp_trs_pin_entry__bindgen_ty_1,
+    pub pin_length_field: osdp_trs_pin_entry__bindgen_ty_2,
+    #[doc = "< Minimum PIN length, in digits"]
+    pub min_digits: u8,
+    #[doc = "< Maximum PIN length, in digits"]
+    pub max_digits: u8,
+    #[doc = "< When PIN entry ends: OR of\n   enum osdp_trs_pin_complete_e conditions"]
+    pub complete_on: u32,
+    #[doc = "< Number of display messages"]
+    pub num_messages: u8,
+    #[doc = "< Display language identifier"]
+    pub language_id: u16,
+    #[doc = "< Index of the message to display"]
+    pub msg_index: u8,
+    #[doc = "< T=1 protocol prologue"]
+    pub teo_prologue: [u8; 3usize],
+    #[doc = "< C-APDU to send after PIN entry"]
+    pub apdu: osdp_trs_apdu,
+}
+#[doc = " The PIN block: the region of the C-APDU where the reader formats\n and inserts the entered PIN."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_trs_pin_entry__bindgen_ty_1 {
+    #[doc = "< PIN digit encoding"]
+    pub format: osdp_trs_pin_format_e,
+    #[doc = "< Right-justify the PIN within the block\n   (default: left-justified)"]
+    pub right_justify: bool,
+    #[doc = "< Block position in the APDU payload, in bits"]
+    pub offset_bits: u16,
+    #[doc = "< Block size in bytes, after justification\n   and formatting, as defined by the card\n   scheme (8 for EMV/ISO 9564 PIN blocks)"]
+    pub size_bytes: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_trs_pin_entry__bindgen_ty_2 {
+    #[doc = "< Slot size in bits (0 = APDU has no such slot)"]
+    pub size_bits: u8,
+    #[doc = "< Slot position in the APDU payload, in bits"]
+    pub offset_bits: u16,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct osdp_trs_cmd {
+    #[doc = "< Which TRS command; selects the union"]
+    pub command: osdp_trs_cmd_e,
+    pub __bindgen_anon_1: osdp_trs_cmd__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union osdp_trs_cmd__bindgen_ty_1 {
+    #[doc = "< For OSDP_TRS_CMD_SEND_APDU"]
+    pub apdu: osdp_trs_apdu,
+    pub pin_entry: osdp_trs_pin_entry,
+}
+#[doc = "< ISO 7816 contact (T=0/T=1)"]
+pub const osdp_trs_card_protocol_e_OSDP_TRS_CARD_PROTOCOL_CONTACT: osdp_trs_card_protocol_e = 1;
+#[doc = "< ISO 14443 A/B contactless"]
+pub const osdp_trs_card_protocol_e_OSDP_TRS_CARD_PROTOCOL_CONTACTLESS: osdp_trs_card_protocol_e = 2;
+#[doc = " @brief Smart-card communication protocol reported in a TRS card-info reply"]
+pub type osdp_trs_card_protocol_e = ::core::ffi::c_uchar;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_trs_card_info {
+    #[doc = "< Reader number (0 = first, 1 = second)"]
+    pub reader: u8,
+    #[doc = "< Card communication protocol"]
+    pub protocol: osdp_trs_card_protocol_e,
+    #[doc = "< Length of @a csn in bytes"]
+    pub csn_len: u8,
+    #[doc = "< Card serial number"]
+    pub csn: [u8; 32usize],
+    #[doc = "< Length of @a protocol_data in bytes"]
+    pub protocol_data_len: u8,
+    #[doc = " ATR (contact) or ATS/ATQB (contactless)"]
+    pub protocol_data: [u8; 64usize],
+}
+#[doc = " No presence has been reported. This is what a zero-initialized\n struct holds, so a status must be compared against the named values\n below rather than tested for \"not @a OSDP_TRS_CARD_NOT_PRESENT\"."]
+pub const osdp_trs_card_status_e_OSDP_TRS_CARD_STATUS_UNKNOWN: osdp_trs_card_status_e = 0;
+#[doc = "< No card detected"]
+pub const osdp_trs_card_status_e_OSDP_TRS_CARD_NOT_PRESENT: osdp_trs_card_status_e = 1;
+#[doc = "< Card present; interface not specified"]
+pub const osdp_trs_card_status_e_OSDP_TRS_CARD_PRESENT: osdp_trs_card_status_e = 2;
+#[doc = "< Card present on the contactless (ISO 14443) interface"]
+pub const osdp_trs_card_status_e_OSDP_TRS_CARD_PRESENT_CONTACTLESS: osdp_trs_card_status_e = 3;
+#[doc = "< Card present on the contact (ISO 7816) interface"]
+pub const osdp_trs_card_status_e_OSDP_TRS_CARD_PRESENT_CONTACT: osdp_trs_card_status_e = 4;
+#[doc = " @brief Smart-card presence (and interface) reported in a TRS card-present reply"]
+pub type osdp_trs_card_status_e = ::core::ffi::c_uchar;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_trs_card_present {
+    #[doc = "< Reader number (0 = first, 1 = second)"]
+    pub reader: u8,
+    #[doc = "< Smart-card presence status"]
+    pub status: osdp_trs_card_status_e,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_trs_card_data {
+    #[doc = "< Reader number (0 = first, 1 = second)"]
+    pub reader: u8,
+    #[doc = "< Result of the APDU exchange as reported by the reader\n   (reader-defined; not standardized by OSDP)"]
+    pub status: u8,
+    #[doc = "< R-APDU returned by the card"]
+    pub apdu: osdp_trs_apdu,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_trs_pin_complete {
+    #[doc = "< Reader number (0 = first, 1 = second)"]
+    pub reader: u8,
+    #[doc = "< Result of the secure PIN entry sequence as reported by the\n   reader (reader-defined; not standardized by OSDP)"]
+    pub status: u8,
+    #[doc = "< Number of PIN-entry attempts"]
+    pub tries: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_trs_error {
+    #[doc = "< Error/NAK condition from the reader or card\n   (reader-defined; not standardized by OSDP)"]
+    pub code: u8,
+}
+#[doc = "< A card entered the field (CSN, protocol)"]
+pub const osdp_trs_reply_e_OSDP_TRS_REPLY_CARD_INFO: osdp_trs_reply_e = 1;
+#[doc = "< Card-present status for a reader"]
+pub const osdp_trs_reply_e_OSDP_TRS_REPLY_CARD_PRESENT: osdp_trs_reply_e = 2;
+#[doc = "< R-APDU returned by the card"]
+pub const osdp_trs_reply_e_OSDP_TRS_REPLY_CARD_DATA: osdp_trs_reply_e = 3;
+#[doc = "< PIN entry completed"]
+pub const osdp_trs_reply_e_OSDP_TRS_REPLY_PIN_COMPLETE: osdp_trs_reply_e = 4;
+#[doc = "< Transparent-mode error / NAK from reader"]
+pub const osdp_trs_reply_e_OSDP_TRS_REPLY_ERROR: osdp_trs_reply_e = 5;
+#[doc = " @brief Transparent Reader Support (TRS) replies delivered to a CP application\n as an @c OSDP_EVENT_TRS event, or submitted by a PD application (via\n @c osdp_pd_submit_event) in answer to a TRS command. The @a reply field\n selects the active union member."]
+pub type osdp_trs_reply_e = ::core::ffi::c_uchar;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct osdp_trs_reply {
+    #[doc = "< Which TRS reply; selects the union"]
+    pub reply: osdp_trs_reply_e,
+    pub __bindgen_anon_1: osdp_trs_reply__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union osdp_trs_reply__bindgen_ty_1 {
+    pub card_info: osdp_trs_card_info,
+    pub card_present: osdp_trs_card_present,
+    pub card_data: osdp_trs_card_data,
+    pub pin_complete: osdp_trs_pin_complete,
+    pub error: osdp_trs_error,
+}
+#[doc = " @brief Payload for OSDP_NOTIFICATION_SC_STATUS."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_notification_sc_status {
+    #[doc = "< Secure channel session is up"]
+    pub active: bool,
+    #[doc = "< true: SCBK-D (install key); false: SCBK"]
+    pub scbk_d: bool,
+}
+#[doc = " @brief Payload for OSDP_NOTIFICATION_PD_STATUS."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_notification_pd_status {
+    #[doc = "< Peer link is online/reachable"]
+    pub online: bool,
+}
+#[doc = " @brief Payload for OSDP_NOTIFICATION_TRS_STATUS."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_notification_trs_status {
+    #[doc = "< Session life-cycle state"]
+    pub status: osdp_trs_session_status_e,
+}
+#[doc = " @brief LibOSDP notification payload.\n\n Carries a libosdp-synthesized notification to the application. The same\n struct is used in both event (CP) and command (PD) delivery paths. The\n @a type discriminator selects which union member is valid; see\n @ref osdp_notification_type."]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct osdp_notification {
+    #[doc = "< Notification type"]
+    pub type_: osdp_notification_type,
+    pub __bindgen_anon_1: osdp_notification__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union osdp_notification__bindgen_ty_1 {
+    #[doc = "< SC_STATUS"]
+    pub sc_status: osdp_notification_sc_status,
+    #[doc = "< PD_STATUS"]
+    pub pd_status: osdp_notification_pd_status,
+    #[doc = "< MP_*"]
+    pub mp: osdp_mp_notification,
+    #[doc = "< PD_ID"]
+    pub pd_id: osdp_pd_id,
+    #[doc = "< TRS_STATUS"]
+    pub trs_status: osdp_notification_trs_status,
+}
 #[doc = " @brief Queue linkage node; layout-compatible with node_t from list.h.\n Embedded as @c _node in osdp_cmd and osdp_event. Do not read or write this\n field — it is reserved for internal use by the library."]
 pub type osdp_queue_node_t = osdp_queue_node_s;
 #[repr(C)]
@@ -412,6 +941,20 @@ pub union osdp_cmd__bindgen_ty_1 {
     pub file_tx: osdp_cmd_file_tx,
     #[doc = "< Status report command structure"]
     pub status: osdp_status_report,
+    #[doc = "< LibOSDP notification (PD mode)"]
+    pub notif: osdp_notification,
+    #[doc = "< Biometric read command structure"]
+    pub bioread: osdp_cmd_bioread,
+    #[doc = "< Biometric match command structure"]
+    pub biomatch: osdp_cmd_biomatch,
+    #[doc = "< Time and date set command structure"]
+    pub tdset: osdp_cmd_tdset,
+    #[doc = "< PIV data retrieval command structure"]
+    pub pivdata: osdp_cmd_pivdata,
+    #[doc = "< GENAUTH/CRAUTH command structure"]
+    pub auth: osdp_cmd_auth,
+    #[doc = "< Transparent mode command structure"]
+    pub trs: osdp_trs_cmd,
 }
 #[doc = "< Unspecified card format"]
 pub const osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_UNSPECIFIED: osdp_event_cardread_format_e =
@@ -428,14 +971,14 @@ pub type osdp_event_cardread_format_e = ::core::ffi::c_uchar;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_event_cardread {
-    #[doc = " Reader number. 0 = First Reader, 1 = Second Reader, etc."]
+    #[doc = " Target reader: 0 is this PD, 1 the first attached reader, and so on.\n Must fit within the PD's OSDP_PD_CAP_READERS capability."]
     pub reader_no: ::core::ffi::c_int,
     #[doc = " Format of the card being read."]
     pub format: osdp_event_cardread_format_e,
     #[doc = " Direction of data in @a data array.\n - 0 - Forward\n - 1 - Backward"]
     pub direction: ::core::ffi::c_int,
-    #[doc = " Length of card data in bits"]
-    pub length: ::core::ffi::c_int,
+    #[doc = " Length of card data in bits. Carried as a 16-bit value on the wire."]
+    pub length: u16,
     #[doc = " Card data of @a length bytes or bits bits depending on @a format"]
     pub data: [u8; 64usize],
 }
@@ -443,7 +986,7 @@ pub struct osdp_event_cardread {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_event_keypress {
-    #[doc = " Reader number in context of sub-readers attached to current PD; this\n number indicates the number of that reader. This is not supported by\n LibOSDP."]
+    #[doc = " Target reader: 0 is this PD, 1 the first attached reader, and so on.\n Must fit within the PD's OSDP_PD_CAP_READERS capability."]
     pub reader_no: ::core::ffi::c_int,
     #[doc = " Length of keypress data in bytes"]
     pub length: ::core::ffi::c_int,
@@ -461,27 +1004,51 @@ pub struct osdp_event_mfgrep {
     #[doc = " Manufacturer data of `length` bytes (optional)"]
     pub data: [u8; 128usize],
 }
-#[doc = " Application command outcome report.\n\n arg0: The command ID\n arg1: outcome -- 0: success; -1: failure;"]
-pub const osdp_event_notification_type_OSDP_EVENT_NOTIFICATION_COMMAND:
-    osdp_event_notification_type = 0;
-#[doc = " Secure Channel state change\n\n arg0: status -- 0: inactive; 1: active\n arg1: scbk type -- 0: scbk; 1: scbk-d"]
-pub const osdp_event_notification_type_OSDP_EVENT_NOTIFICATION_SC_STATUS:
-    osdp_event_notification_type = 1;
-#[doc = " PD state change\n\n arg0: status -- 0: offline; 1: online"]
-pub const osdp_event_notification_type_OSDP_EVENT_NOTIFICATION_PD_STATUS:
-    osdp_event_notification_type = 2;
-#[doc = " @brief LibOSDP event notification type"]
-pub type osdp_event_notification_type = ::core::ffi::c_uchar;
-#[doc = " @brief LibOSDP event notification\n\n These are events generated by LibOSDP for the application to indicate various\n status such as external command outcomes, SC state change notifications, etc.\n The app can use these events to perform housekeeping activities as needed.\n\n Each notification event type can use the provided additional data members\n @a arg0, @a arg1, ... in custom ways. See @ref osdp_event_notification_type\n for documentation on how to use them."]
+#[doc = " @brief OSDP Event Manufacturer Specific Status/Error Reply\n\n Both replies have the same layout, so this structure backs the `mfgstatr`\n member of `OSDP_EVENT_MFGSTATR` and the `mfgerrr` member of\n `OSDP_EVENT_MFGERRR`; the event type distinguishes a status condition from\n an error condition.\n\n @note Unlike `osdp_MFGREP`, the OSDP spec (v2.2 sections 7.23 and 7.24)\n defines no vendor code for these replies; @a data is entirely vendor\n defined. Use the vendor code that the PD reported in `osdp_PDID` to\n determine how to interpret it."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct osdp_event_notification {
-    #[doc = "< Notification type"]
-    pub type_: osdp_event_notification_type,
-    #[doc = "< Additional data member"]
-    pub arg0: ::core::ffi::c_int,
-    #[doc = "< Additional data member"]
-    pub arg1: ::core::ffi::c_int,
+pub struct osdp_event_mfgstat {
+    #[doc = " Length of manufacturer data in bytes"]
+    pub length: u8,
+    #[doc = " Manufacturer data of `length` bytes"]
+    pub data: [u8; 128usize],
+}
+#[doc = " @brief OSDP Event Scan and Send Biometric Data\n\n Sent by the PD in response to an `OSDP_CMD_BIOREAD` command."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_event_bioreadr {
+    #[doc = " Target reader: 0 is this PD, 1 the first attached reader, and so on.\n Must fit within the PD's OSDP_PD_CAP_READERS capability."]
+    pub reader: u8,
+    #[doc = " Outcome of the scan. See @ref osdp_biometric_status_e. The remaining\n fields are valid only when this is `OSDP_BIO_STATUS_SUCCESS`."]
+    pub status: osdp_biometric_status_e,
+    #[doc = " Body part that was scanned. See @ref osdp_biometric_type_e\n\n @note The OSDP spec carries no format field in this reply."]
+    pub type_: osdp_biometric_type_e,
+    #[doc = " Scan quality; 0x00 is worst, 0xFF is best"]
+    pub quality: u8,
+    #[doc = " Length of the template in @a data"]
+    pub length: u16,
+    #[doc = " The scanned image or template"]
+    pub data: [u8; 256usize],
+}
+#[doc = " @brief OSDP Event Scan and Match Biometric Template\n\n Sent by the PD in response to an `OSDP_CMD_BIOMATCH` command."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_event_biomatchr {
+    #[doc = " Target reader: 0 is this PD, 1 the first attached reader, and so on.\n Must fit within the PD's OSDP_PD_CAP_READERS capability."]
+    pub reader: u8,
+    #[doc = " Outcome of the scan. See @ref osdp_biometric_status_e. @a score is\n valid only when this is `OSDP_BIO_STATUS_SUCCESS`."]
+    pub status: osdp_biometric_status_e,
+    #[doc = " Result of the biometric match; 0x00 is no match, 0xFF is best match"]
+    pub score: u8,
+}
+#[doc = " @brief Payload of a smartcard/PIV reply (`OSDP_EVENT_PIVDATAR` /\n `OSDP_EVENT_GENAUTHR` / `OSDP_EVENT_CRAUTHR`).\n\n These replies travel as OSDP multi-part messages. On the CP, the event\n carries the fully reassembled payload. On the PD, the application submits\n this event (from within the command callback for an inline reply, or later\n for delivery on a subsequent poll) and libosdp fragments it on the wire."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_event_piv_reply {
+    #[doc = " Number of valid bytes in @a data; must be non-zero"]
+    pub length: u16,
+    #[doc = " Reassembled reply payload"]
+    pub data: [u8; 256usize],
 }
 #[doc = "< Card read event"]
 pub const osdp_event_type_OSDP_EVENT_CARDREAD: osdp_event_type = 1;
@@ -493,8 +1060,24 @@ pub const osdp_event_type_OSDP_EVENT_MFGREP: osdp_event_type = 3;
 pub const osdp_event_type_OSDP_EVENT_STATUS: osdp_event_type = 4;
 #[doc = "< LibOSDP notification event"]
 pub const osdp_event_type_OSDP_EVENT_NOTIFICATION: osdp_event_type = 5;
+#[doc = "< Manufacturer specific status reply event"]
+pub const osdp_event_type_OSDP_EVENT_MFGSTATR: osdp_event_type = 6;
+#[doc = "< Manufacturer specific error reply event"]
+pub const osdp_event_type_OSDP_EVENT_MFGERRR: osdp_event_type = 7;
+#[doc = "< Scan and send biometric data event"]
+pub const osdp_event_type_OSDP_EVENT_BIOREADR: osdp_event_type = 8;
+#[doc = "< Scan and match biometric template event"]
+pub const osdp_event_type_OSDP_EVENT_BIOMATCHR: osdp_event_type = 9;
+#[doc = "< PIV data reply event"]
+pub const osdp_event_type_OSDP_EVENT_PIVDATAR: osdp_event_type = 10;
+#[doc = "< General authenticate reply event"]
+pub const osdp_event_type_OSDP_EVENT_GENAUTHR: osdp_event_type = 11;
+#[doc = "< Challenge/response authenticate reply event"]
+pub const osdp_event_type_OSDP_EVENT_CRAUTHR: osdp_event_type = 12;
+#[doc = "< Transparent mode response event"]
+pub const osdp_event_type_OSDP_EVENT_TRS: osdp_event_type = 13;
 #[doc = "< Max event value"]
-pub const osdp_event_type_OSDP_EVENT_SENTINEL: osdp_event_type = 6;
+pub const osdp_event_type_OSDP_EVENT_SENTINEL: osdp_event_type = 14;
 #[doc = " @brief OSDP PD Events"]
 pub type osdp_event_type = ::core::ffi::c_uchar;
 #[doc = " @brief OSDP Event structure."]
@@ -519,12 +1102,24 @@ pub union osdp_event__bindgen_ty_1 {
     pub cardread: osdp_event_cardread,
     #[doc = "< Manufacturer specific response event struture"]
     pub mfgrep: osdp_event_mfgrep,
+    #[doc = "< Manufacturer specific status reply event structure"]
+    pub mfgstatr: osdp_event_mfgstat,
+    #[doc = "< Manufacturer specific error reply event structure"]
+    pub mfgerrr: osdp_event_mfgstat,
+    #[doc = "< Biometric read reply event structure"]
+    pub bioreadr: osdp_event_bioreadr,
+    #[doc = "< Biometric match reply event structure"]
+    pub biomatchr: osdp_event_biomatchr,
+    #[doc = "< Smartcard/PIV reply event structure"]
+    pub piv_reply: osdp_event_piv_reply,
     #[doc = "< Status report event structure"]
     pub status: osdp_status_report,
-    #[doc = "< Notification event structure"]
-    pub notif: osdp_event_notification,
+    #[doc = "< LibOSDP notification (CP mode)"]
+    pub notif: osdp_notification,
+    #[doc = "< Transparent mode reply event structure"]
+    pub trs: osdp_trs_reply,
 }
-#[doc = " @brief Callback for PD command notifications. After it has been registered\n with `osdp_pd_set_command_callback`, this method is invoked when the PD\n receives a command from the CP.\n\n @param arg pointer that will was passed to the arg param of\n `osdp_pd_set_command_callback`.\n @param cmd pointer to the received command.\n\n @retval 0 if LibOSDP must send a `osdp_ACK` response\n @retval -ve if LibOSDP must send a `osdp_NAK` response\n @retval +ve and modify the passed `struct osdp_cmd *cmd` if LibOSDP must\n send a specific response. This is useful for sending manufacturer specific\n reply `osdp_MFGREP`."]
+#[doc = " @brief Callback for PD command notifications. After it has been registered\n with `osdp_pd_set_command_callback`, this method is invoked when the PD\n receives a command from the CP.\n\n @param arg pointer that will was passed to the arg param of\n `osdp_pd_set_command_callback`.\n @param cmd pointer to the received command.\n\n @retval 0 if LibOSDP must send an `osdp_ACK` response.\n @retval -ve if LibOSDP must send an `osdp_NAK` response.\n @retval +ve is reserved.\n\n @note To select the NAK code, return the negated code; only the codes an\n application can know are honoured:\n   - `-OSDP_PD_NAK_BIO_TYPE` - the requested biometric type is not supported\n   - `-OSDP_PD_NAK_BIO_FMT` - the requested biometric format is not supported\n   - `-OSDP_PD_NAK_RECORD` - the command record could not be processed\n Any other -ve value (such as a plain `-1`) sends `OSDP_PD_NAK_RECORD`. The\n remaining NAK codes describe protocol faults that only LibOSDP can detect;\n returning one of them logs a warning and sends `OSDP_PD_NAK_RECORD`.\n\n @note For commands whose reply carries application data - `OSDP_CMD_MFG`,\n `OSDP_CMD_BIOREAD` and `OSDP_CMD_BIOMATCH` - the app submits the reply as an\n event via `osdp_pd_submit_event()`. Submitting it from within this callback\n sends it as the reply to the command itself; submitting it later sends it as\n a poll response and this command is `osdp_ACK`-ed."]
 pub type pd_command_callback_t = ::core::option::Option<
     unsafe extern "C" fn(arg: *mut ::core::ffi::c_void, cmd: *mut osdp_cmd) -> ::core::ffi::c_int,
 >;
@@ -536,7 +1131,7 @@ pub type cp_event_callback_t = ::core::option::Option<
         ev: *mut osdp_event,
     ) -> ::core::ffi::c_int,
 >;
-#[doc = "< Successfully completed"]
+#[doc = " Successfully completed. In CP mode, a valid reply for the command\n was received from the PD. In PD mode, the event's reply was\n accepted by the transport; delivery to the CP is not confirmed."]
 pub const osdp_completion_status_OSDP_COMPLETION_OK: osdp_completion_status = 0;
 #[doc = "< Transport/protocol failure"]
 pub const osdp_completion_status_OSDP_COMPLETION_FAILED: osdp_completion_status = 1;
@@ -546,29 +1141,29 @@ pub const osdp_completion_status_OSDP_COMPLETION_FLUSHED: osdp_completion_status
 pub const osdp_completion_status_OSDP_COMPLETION_ABORTED: osdp_completion_status = 3;
 #[doc = " @brief Terminal status of a submitted command/event object."]
 pub type osdp_completion_status = ::core::ffi::c_uchar;
-#[doc = " @brief Callback for CP command completion notifications."]
+#[doc = " @brief Callback for CP command completion notifications.\n\n Invoked on the caller's thread from within osdp_cp_refresh(),\n osdp_cp_flush_commands() and osdp_cp_teardown(). It must not block."]
 pub type cp_command_completion_callback_t = ::core::option::Option<
     unsafe extern "C" fn(
         arg: *mut ::core::ffi::c_void,
         pd: ::core::ffi::c_int,
-        cmd: *const osdp_cmd,
+        cmd: *mut osdp_cmd,
         status: osdp_completion_status,
     ),
 >;
-#[doc = " @brief Callback for PD event completion notifications."]
+#[doc = " @brief Callback for PD event completion notifications.\n\n Invoked on the caller's thread from within osdp_pd_refresh(),\n osdp_pd_flush_events() and osdp_pd_teardown(). It must not block."]
 pub type pd_event_completion_callback_t = ::core::option::Option<
     unsafe extern "C" fn(
         arg: *mut ::core::ffi::c_void,
-        ev: *const osdp_event,
+        ev: *mut osdp_event,
         status: osdp_completion_status,
     ),
 >;
 unsafe extern "C" {
-    #[doc = " @brief This method is used to setup a device in PD mode. Application must\n store the returned context pointer and pass it back to all OSDP functions\n intact.\n\n @param info Pointer to info struct populated by application.\n\n @retval OSDP Context on success\n @retval NULL on errors"]
-    pub fn osdp_pd_setup(info: *const osdp_pd_info_t) -> *mut osdp_t;
+    #[doc = " @brief This method is used to setup a device in PD mode. Application must\n store the returned context pointer and pass it back to all OSDP functions\n intact.\n\n @param channel Pointer to channel ops used for this PD context.\n @param info Pointer to info struct populated by application.\n\n @retval OSDP Context on success\n @retval NULL on errors"]
+    pub fn osdp_pd_setup(channel: *mut osdp_channel, info: *const osdp_pd_info_t) -> *mut osdp_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context"]
+    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context\n\n @note LibOSDP is not internally synchronized. All API calls against one\n context -- submissions, flushes, teardown, and this refresh -- must be\n serialized by the caller: either make every call from one thread, or hold\n one lock across every call (the bundled python binding does the latter).\n The submit APIs enqueue into unlocked intrusive lists that this call\n consumes; concurrent unserialized access corrupts them. The read-only\n getters are exempt: osdp_get_status_mask(), osdp_get_sc_status_mask(),\n osdp_cp_get_pd_id() and osdp_get_file_tx_status() mutate nothing and may be\n called concurrently -- see their notes."]
     pub fn osdp_pd_refresh(ctx: *mut osdp_t);
 }
 unsafe extern "C" {
@@ -576,7 +1171,7 @@ unsafe extern "C" {
     pub fn osdp_pd_teardown(ctx: *mut osdp_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Set PD's capabilities\n\n @param ctx OSDP context\n @param cap pointer to array of cap (`struct osdp_pd_cap`) terminated by a\n capability with cap->function_code set to 0."]
+    #[doc = " @brief Set PD's capabilities\n\n @param ctx OSDP context\n @param cap pointer to array of cap (`struct osdp_pd_cap`) terminated by a\n capability with cap->function_code set to OSDP_PD_CAP_SENTINEL."]
     pub fn osdp_pd_set_capabilities(ctx: *mut osdp_t, cap: *const osdp_pd_cap);
 }
 unsafe extern "C" {
@@ -588,11 +1183,15 @@ unsafe extern "C" {
     );
 }
 unsafe extern "C" {
-    #[doc = " @brief API to notify PD events to CP. These events are sent to the CP as an\n alternate response to a POLL command.\n\n @param ctx OSDP context\n @param event pointer to event struct. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure"]
-    pub fn osdp_pd_notify_event(ctx: *mut osdp_t, event: *const osdp_event) -> ::core::ffi::c_int;
+    #[doc = " @brief Set callback method for PD event completion.\n\n @param ctx OSDP context\n @param cb Callback function pointer\n @param arg Opaque pointer passed as first callback argument\n\n @note Clearing this callback (passing NULL) while events are still queued\n or in flight orphans them: their completions are dropped and the\n application never gets them back. Unregister only after\n osdp_pd_flush_events() or osdp_pd_teardown() has drained them."]
+    pub fn osdp_pd_set_event_completion_callback(
+        ctx: *mut osdp_t,
+        cb: pd_event_completion_callback_t,
+        arg: *mut ::core::ffi::c_void,
+    );
 }
 unsafe extern "C" {
-    #[doc = " @brief Submit PD events to CP. These events are delivered to the CP as a\n response to a future POLL command. A successful return does not mean CP\n received it, it only means LibOSDP accepted this submission.\n\n @param ctx OSDP context\n @param event pointer to event struct. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure"]
+    #[doc = " @brief Submit PD events to CP. These events are delivered to the CP as a\n response to a future POLL command. A successful return does not mean CP\n received it, it only means LibOSDP accepted this submission.\n\n @param ctx OSDP context\n @param event pointer to event struct. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note An accepted event is queued @b by @b reference; LibOSDP does not copy\n it. @a event must stay alive and unmodified from a successful submission until\n the library is done with it -- an event that lives on the stack of a function\n that returns (a command callback, say), or one reused for a second submission\n while the first is still queued, corrupts the queue. Ownership returns to the\n application when the event completion callback fires for that pointer (see\n osdp_pd_set_event_completion_callback()); every accepted event is reported\n exactly once, including those dropped by osdp_pd_flush_events()\n (@c OSDP_COMPLETION_FLUSHED) and osdp_pd_teardown() (@c OSDP_COMPLETION_ABORTED).\n That callback is where a heap-allocated event should be freed. On a -1 return\n the event was never queued and is the application's to reuse at once.\n\n @note Submission fails unless a completion callback is registered (see\n osdp_pd_set_event_completion_callback()) -- the completion callback is how\n ownership of the submitted event returns to the application."]
     pub fn osdp_pd_submit_event(ctx: *mut osdp_t, event: *const osdp_event) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -600,8 +1199,12 @@ unsafe extern "C" {
     pub fn osdp_pd_flush_events(ctx: *mut osdp_t) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief This method is used to setup a device in CP mode. Application must\n store the returned context pointer and pass it back to all OSDP functions\n intact.\n\n @param num_pd Number of PDs connected to this CP. The `osdp_pd_info_t *` is\n treated as an array of length num_pd.\n @param info Pointer to info struct populated by application.\n\n @retval OSDP Context on success\n @retval NULL on errors"]
-    pub fn osdp_cp_setup(num_pd: ::core::ffi::c_int, info: *const osdp_pd_info_t) -> *mut osdp_t;
+    #[doc = " @brief This method is used to setup a device in CP mode. Application must\n store the returned context pointer and pass it back to all OSDP functions\n intact.\n\n @param channel Pointer to shared channel ops used for this CP context.\n @param num_pd Number of PDs connected to this CP. The `osdp_pd_info_t *` is\n treated as an array of length num_pd.\n @param info Pointer to info struct populated by application.\n\n @retval OSDP Context on success\n @retval NULL on errors"]
+    pub fn osdp_cp_setup(
+        channel: *const osdp_channel,
+        num_pd: ::core::ffi::c_int,
+        info: *const osdp_pd_info_t,
+    ) -> *mut osdp_t;
 }
 unsafe extern "C" {
     #[doc = " @brief Adds more PD devices in the CP control list.\n\n @param ctx OSDP context\n @param num_pd Number of PDs connected to this CP. The `osdp_pd_info_t *` is\n treated as an array of length num_pd.\n @param info Pointer to info struct populated by application.\n\n @retval 0 on success\n @retval -1 on failure"]
@@ -612,7 +1215,7 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context"]
+    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context\n\n @note LibOSDP is not internally synchronized. All API calls against one\n context -- submissions, flushes, teardown, and this refresh -- must be\n serialized by the caller: either make every call from one thread, or hold\n one lock across every call (the bundled python binding does the latter).\n The submit APIs enqueue into unlocked intrusive lists that this call\n consumes; concurrent unserialized access corrupts them. The read-only\n getters are exempt: osdp_get_status_mask(), osdp_get_sc_status_mask(),\n osdp_cp_get_pd_id() and osdp_get_file_tx_status() mutate nothing and may be\n called concurrently -- see their notes."]
     pub fn osdp_cp_refresh(ctx: *mut osdp_t);
 }
 unsafe extern "C" {
@@ -620,15 +1223,7 @@ unsafe extern "C" {
     pub fn osdp_cp_teardown(ctx: *mut osdp_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Generic command enqueue API.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param cmd command pointer. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note This method only adds the command on to a particular PD's command\n queue. The command itself can fail due to various reasons."]
-    pub fn osdp_cp_send_command(
-        ctx: *mut osdp_t,
-        pd: ::core::ffi::c_int,
-        cmd: *const osdp_cmd,
-    ) -> ::core::ffi::c_int;
-}
-unsafe extern "C" {
-    #[doc = " @brief Submit CP commands to PD. These commands are queued to be sent to the\n PD at the next available opportunity. A successful return does not mean PD\n received it, it only means LibOSDP accepted this submission.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param cmd command pointer. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note This method only adds the command on to a particular PD's command\n queue. The command itself can fail due to various reasons."]
+    #[doc = " @brief Submit CP commands to PD. These commands are queued to be sent to the\n PD at the next available opportunity. A successful return does not mean PD\n received it, it only means LibOSDP accepted this submission.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param cmd command pointer. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note This method only adds the command on to a particular PD's command\n queue. The command itself can fail due to various reasons.\n\n @note An accepted command is queued @b by @b reference; LibOSDP does not copy\n it. @a cmd must stay alive and unmodified from a successful submission until\n the library is done with it -- a command that lives on the stack of a function\n that returns, or one reused for a second submission while the first is still\n queued, corrupts the queue. Ownership returns to the application when the\n command completion callback fires for that pointer (see\n osdp_cp_set_command_completion_callback()); every accepted command is reported\n exactly once, including those dropped by osdp_cp_flush_commands()\n (@c OSDP_COMPLETION_FLUSHED) and osdp_cp_teardown() (@c OSDP_COMPLETION_ABORTED).\n That callback is where a heap-allocated command should be freed. On a -1\n return the command was never queued and is the application's to reuse at once.\n\n @note OSDP_CMD_FILE_TX, OSDP_CMD_PIVDATA, OSDP_CMD_GENAUTH and\n OSDP_CMD_CRAUTH do not ride the command queue; a feature engine runs them\n across many exchanges. The completion callback fires when the operation\n ends, not when it is accepted, so @a cmd must stay alive for the whole\n operation. Progress is reported meanwhile by the OSDP_NOTIFICATION_MP_*\n notifications, and osdp_cp_cancel() asks such an operation to stop early.\n\n @note Submission fails unless a completion callback is registered (see\n osdp_cp_set_command_completion_callback()) -- the completion callback is\n how ownership of the submitted command returns to the application.\n\n @note Submission is accepted only while the PD is ONLINE; expect and handle\n the -1 path. Once accepted, a command survives a link outage: it stays\n queued while the PD is offline and executes after the PD reconnects,\n however much later that is. If stale delivery is worse than no delivery\n (LED/buzzer feedback, say), call osdp_cp_flush_commands() when the PD goes\n offline (see @ref OSDP_NOTIFICATION_PD_STATUS)."]
     pub fn osdp_cp_submit_command(
         ctx: *mut osdp_t,
         pd: ::core::ffi::c_int,
@@ -636,11 +1231,39 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
+    #[doc = " @brief Ask a running multi-part operation to stop early.\n\n Multi-part operations (file transfer, PIV data retrieval, general and\n challenge/response authenticate, and a multi-part biometric read) run across\n many exchanges after osdp_cp_submit_command() accepts them. This asks the\n one named by @a what to terminate at the next opportunity.\n\n The request is cooperative, not immediate: the operation ends on a\n subsequent osdp_cp_refresh(), which is also when the PD is told to stop. The\n command that started it then completes exactly as any other failed operation\n does -- @c OSDP_COMPLETION_FAILED, with @c OSDP_MP_OUTCOME_ABORTED on the\n accompanying @c OSDP_NOTIFICATION_MP_DONE -- so a cancel adds no completion\n of its own.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param what Which multi-part operation to cancel. This is the same value\n reported as @c osdp_mp_notification::mp_type when the operation started.\n\n @retval 0 the request was recorded\n @retval -1 no operation of that type is in progress on this PD"]
+    pub fn osdp_cp_cancel(
+        ctx: *mut osdp_t,
+        pd: ::core::ffi::c_int,
+        what: osdp_mp_msg_type,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
     #[doc = " @brief Deletes all commands queued for a give PD\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @return int Count of events dequeued"]
     pub fn osdp_cp_flush_commands(ctx: *mut osdp_t, pd: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Get PD ID information as reported by the PD. Calling this method\n before the CP has had a the chance to get this information will return\n invalid/stale results.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param id A pointer to struct osdp_pd_id that will be filled with the\n PD ID information that the PD last returned.\n\n @retval 0 on success\n @retval -1 on failure"]
+    #[doc = " @brief Enable a background card presence scan on a TRS-capable PD, for\n readers that do not announce smart cards while in their default mode.\n\n While enabled and no card session (band) is open, the library time-slices\n the reader: it stays in the default mode for @a mode0_dwell_ms (ordinary\n credential reads keep working), then holds transparent mode for\n @a mode1_dwell_ms watching for a card sighting, and repeats. A sighting is\n delivered as an @c OSDP_EVENT_TRS event and transparent mode is held for\n @a hold_ms so the band the app opens in response adopts the reader without\n renegotiating the mode. See @ref osdp_trs_scan_params.\n\n The scan pauses by itself while a band or file transfer is in progress and\n resumes after. If the reader refuses a probe, an\n @c OSDP_TRS_SCAN_SUSPENDED notification is raised and probing continues\n with exponential backoff, so a reader that is only transiently unwilling\n recovers on its own; call osdp_cp_trs_scan_disable() to stop entirely.\n\n Readers that announce cards spontaneously in their default mode do not\n need this: their sightings are forwarded as @c OSDP_EVENT_TRS events as-is.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param params Scan cadence; NULL (or zero fields) selects the defaults\n\n @retval 0 on success\n @retval -1 on failure (TRS support not compiled in, or bad args)"]
+    pub fn osdp_cp_trs_scan_enable(
+        ctx: *mut osdp_t,
+        pd: ::core::ffi::c_int,
+        params: *const osdp_trs_scan_params,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Disable the background card presence scan on a PD. If a probe is\n in flight, the reader is restored to its default mode first.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n\n @retval 0 on success\n @retval -1 on failure (TRS support not compiled in, or bad args)"]
+    pub fn osdp_cp_trs_scan_disable(ctx: *mut osdp_t, pd: ::core::ffi::c_int)
+    -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the largest C-APDU that can be sent to a PD in a single\n @c OSDP_TRS_CMD_SEND_APDU.\n\n This is **not** @c OSDP_TRS_APDU_MAX_LEN. That constant only sizes the\n buffer in @a struct osdp_trs_apdu; what actually fits on the wire is bounded\n by the packet size in use, which is the smaller of this build's\n @c OSDP_PACKET_BUF_SIZE and the receive buffer the PD advertised, less the\n framing the APDU travels inside. With the default packet size the limit is\n appreciably lower than @c OSDP_TRS_APDU_MAX_LEN, so an application that sizes\n its payloads against that constant will have commands rejected.\n\n The value is only final once the PD has been online at least once: the PD's\n receive-buffer capability is not known before then, and this returns the\n build's own limit until it is.\n\n An @c OSDP_TRS_CMD_ENTER_PIN carries its APDU behind a fixed parameter\n block, so its APDU has correspondingly less room than this.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n\n @retval >0 Maximum C-APDU length in bytes\n @retval -1 on failure (TRS support not compiled in, or bad args)"]
+    pub fn osdp_cp_trs_get_max_apdu_len(
+        ctx: *const osdp_t,
+        pd: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get PD ID information as reported by the PD. Calling this method\n before the CP has had a the chance to get this information will return\n invalid/stale results.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param id A pointer to struct osdp_pd_id that will be filled with the\n PD ID information that the PD last returned.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note This copies out of the PD's record and mutates nothing, so it is\n exempt from the serialization rule documented on osdp_cp_refresh(). The\n record is filled while the PD comes online and re-read on every reconnect,\n so it changes if a different device starts answering this address; reading\n it before the first read is already documented above as not meaningful.\n @ref OSDP_NOTIFICATION_PD_ID reports such a change as it happens."]
     pub fn osdp_cp_get_pd_id(
         ctx: *const osdp_t,
         pd: ::core::ffi::c_int,
@@ -664,7 +1287,15 @@ unsafe extern "C" {
     );
 }
 unsafe extern "C" {
-    #[doc = " @brief Set or clear OSDP public flags\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param flags One or more of the public flags (OSDP_FLAG_XXX) exported from\n osdp.h. Any other bits will cause this method to fail.\n @param do_set when true: set `flags` in ctx; when false: clear `flags` in ctx\n\n @retval 0 on success\n @retval -1 on failure\n\n @note It doesn't make sense to call some initialization time flags during\n runtime. This method is for dynamic flags that can be turned on/off at runtime."]
+    #[doc = " @brief Set callback method for CP command completion.\n\n @param ctx OSDP context\n @param cb Callback function pointer\n @param arg Opaque pointer passed as first callback argument\n\n @note Clearing this callback (passing NULL) while commands are still queued\n or in flight orphans them: their completions are dropped and the\n application never gets them back. Unregister only after\n osdp_cp_flush_commands() or osdp_cp_teardown() has drained them."]
+    pub fn osdp_cp_set_command_completion_callback(
+        ctx: *mut osdp_t,
+        cb: cp_command_completion_callback_t,
+        arg: *mut ::core::ffi::c_void,
+    );
+}
+unsafe extern "C" {
+    #[doc = " @brief Set or clear OSDP public flags\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param flags One or more of @ref OSDP_FLAG_ENFORCE_SECURE,\n @ref OSDP_FLAG_IGN_UNSOLICITED, @ref OSDP_FLAG_ENABLE_NOTIFICATION and\n @ref OSDP_FLAG_ALLOW_EMPTY_ENCRYPTED_DATA_BLOCK. Any other bit causes this\n method to fail; the remaining flags describe how a device was set up and\n cannot be re-decided on a live link.\n @param do_set when true: set `flags` in ctx; when false: clear `flags` in ctx\n\n @retval 0 on success\n @retval -1 on failure\n\n @note @ref OSDP_FLAG_ENFORCE_SECURE is a one-way latch: it can be set on a\n running link but not cleared, and not set at all on a PD that was configured\n without an SCBK. Nothing is applied when the call fails, so a request that\n mixes an allowed flag with a refused one leaves every flag as it was."]
     pub fn osdp_cp_modify_flag(
         ctx: *mut osdp_t,
         pd: ::core::ffi::c_int,
@@ -708,13 +1339,14 @@ pub type osdp_log_level_e = ::core::ffi::c_uchar;
 pub type osdp_log_puts_fn_t = ::core::option::Option<
     unsafe extern "C" fn(msg: *const ::core::ffi::c_char) -> ::core::ffi::c_int,
 >;
-#[doc = " @brief A callback function to be used with external loggers\n\n @param log_level A syslog style log level. See `enum osdp_log_level_e`\n @param file Relative path to file which produced the log message\n @param line Line number in `file` which produced the log message\n @param msg The log message"]
+#[doc = " @brief A callback function to be used with external loggers\n\n @param pd Address of PD associated with this message; -1 for non-PD/system logs\n @param log_level A syslog style log level. See `enum osdp_log_level_e`\n @param msg The log message\n @param file Relative path to file which produced the log message\n @param line Line number in `file` which produced the log message"]
 pub type osdp_log_callback_fn_t = ::core::option::Option<
     unsafe extern "C" fn(
+        pd: ::core::ffi::c_int,
         log_level: ::core::ffi::c_int,
+        msg: *const ::core::ffi::c_char,
         file: *const ::core::ffi::c_char,
         line: ::core::ffi::c_ulong,
-        msg: *const ::core::ffi::c_char,
     ),
 >;
 unsafe extern "C" {
@@ -726,7 +1358,7 @@ unsafe extern "C" {
     );
 }
 unsafe extern "C" {
-    #[doc = " @brief A callback function that gets called when LibOSDP wants to emit a log\n line. All messages (of all log levels) are passed on to this callback\n without any log formatting. This API is for users who may already have a\n logger configured in their application.\n\n @param cb The callback function. See `osdp_log_callback_fn_t` for more\n details.\n\n @note This function has to be called before osdp_{cp,pd}_setup(). Otherwise\n it will be ignored."]
+    #[doc = " @brief Set logging callback for LibOSDP.\n\n @param cb The callback function. See `osdp_log_callback_fn_t` for more\n details.\n\n @note This function has to be called before osdp_{cp,pd}_setup(). Otherwise\n it will be ignored."]
     pub fn osdp_set_log_callback(cb: osdp_log_callback_fn_t);
 }
 unsafe extern "C" {
@@ -738,19 +1370,48 @@ unsafe extern "C" {
     pub fn osdp_get_source_info() -> *const ::core::ffi::c_char;
 }
 unsafe extern "C" {
-    #[doc = " @brief Get a bit mask of number of PD that are online currently.\n\n @param ctx OSDP context\n @param bitmask pointer to an array of bytes. must be as large as\n (num_pds + 7 / 8)."]
+    #[doc = " @brief Get a bit mask of number of PD that are online currently.\n\n @param ctx OSDP context\n @param bitmask pointer to an array of bytes. must be as large as\n (num_pds + 7 / 8).\n\n @note Unlike the rest of the API, this samples per-PD state and writes only\n to @a bitmask; it mutates nothing. It is therefore exempt from the\n serialization rule documented on osdp_cp_refresh(): it may be called\n concurrently with the refresh loop, and the answer is at worst one refresh\n out of date."]
     pub fn osdp_get_status_mask(ctx: *const osdp_t, bitmask: *mut u8);
 }
 unsafe extern "C" {
-    #[doc = " @brief Get a bit mask of number of PD that are online and have an active\n secure channel currently.\n\n @param ctx OSDP context\n @param bitmask pointer to an array of bytes. must be as large as\n (num_pds + 7 / 8)."]
+    #[doc = " @brief Get a bit mask of number of PD that are online and have an active\n secure channel currently.\n\n @param ctx OSDP context\n @param bitmask pointer to an array of bytes. must be as large as\n (num_pds + 7 / 8).\n\n @note Like osdp_get_status_mask(), this mutates nothing and may be called\n concurrently with the refresh loop."]
     pub fn osdp_get_sc_status_mask(ctx: *const osdp_t, bitmask: *mut u8);
+}
+#[doc = " @brief Link/protocol health counters accumulated since the last\n @ref osdp_get_metrics() call.\n\n All counters saturate at their maximum value (no wraparound) and\n are reset to zero atomically when @ref osdp_get_metrics() returns\n a snapshot, giving callers interval-delta semantics without\n requiring subtraction."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_metrics {
+    #[doc = " Packets transmitted successfully on the wire. Counted once\n per packet handed to the channel driver with its full payload."]
+    pub packets_sent: u32,
+    #[doc = " Packets received with a well-formed frame. Frames that failed\n the CRC/checksum integrity check are still counted here; only\n frames rejected earlier (bad SOM, bad length, bad direction\n bit, etc.) are excluded."]
+    pub packets_received: u32,
+    #[doc = " Inbound frames rejected at the integrity-check stage. Merged\n counter across CRC-16 and single-byte checksum failures — the\n check used is implicit in the negotiated capability."]
+    pub packet_check_errors: u32,
+    #[doc = " REPLY_NAK packets observed on this context. On a PD-mode\n context these are NAKs transmitted; on a CP-mode context\n these are NAKs received. Direction is implicit from the role."]
+    pub nak_count: u32,
+    #[doc = " Successful secure-channel activations (post-SCRYPT)."]
+    pub sc_handshake_count: u32,
+    #[doc = " Secure-channel tear-downs of a previously active session."]
+    pub sc_failure_count: u32,
+    #[doc = " Commands processed at the application callback boundary."]
+    pub command_count: u32,
+    #[doc = " Events dispatched to the application callback."]
+    pub event_count: u32,
+}
+unsafe extern "C" {
+    #[doc = " @brief Read and reset link/protocol health counters for one PD slot.\n\n Counters are tracked per-PD. In PD mode there is only one slot\n (pd_idx == 0). In CP mode pass the index of the downstream PD to\n snapshot; callers typically iterate 0..NUM_PD-1.\n\n @param ctx OSDP context\n @param pd_idx PD index to snapshot (0..NUM_PD-1)\n @param out Destination struct filled with the current counter values.\n            The counters for this PD are then cleared to zero.\n\n @retval 0 on success, -1 on invalid arguments."]
+    pub fn osdp_get_metrics(
+        ctx: *mut osdp_t,
+        pd_idx: ::core::ffi::c_int,
+        out: *mut osdp_metrics,
+    ) -> ::core::ffi::c_int;
 }
 #[doc = " @brief Open a pre-agreed file\n\n @param arg Opaque pointer that was provided in @ref osdp_file_ops when the\n ops struct was registered.\n @param file_id File ID of pre-agreed file between this CP and PD\n @param size Size of the file that was opened (to be populated by sender). In\n case of receiver, this value is just just input to indicate the incoming file\n size.\n\n @retval 0 on success\n @retval -1 on errors"]
 pub type osdp_file_open_fn_t = ::core::option::Option<
     unsafe extern "C" fn(
         arg: *mut ::core::ffi::c_void,
         file_id: ::core::ffi::c_int,
-        size: *mut ::core::ffi::c_int,
+        size: *mut u32,
     ) -> ::core::ffi::c_int,
 >;
 #[doc = " @brief Read a chunk of file data into buffer\n\n @param arg Opaque pointer that was provided in @ref osdp_file_ops when the\n ops struct was registered.\n @param buf Buffer to store file data read\n @param size Number of bytes to read from file into buffer\n @param offset Number of bytes from the beginning of the file to\n start reading from.\n\n @retval Number of bytes read\n @retval 0 on EOF\n @retval -ve on errors.\n\n @note LibOSDP will guarantee that size and offset params are always\n positive and size is always greater than or equal to offset."]
@@ -758,8 +1419,8 @@ pub type osdp_file_read_fn_t = ::core::option::Option<
     unsafe extern "C" fn(
         arg: *mut ::core::ffi::c_void,
         buf: *mut ::core::ffi::c_void,
-        size: ::core::ffi::c_int,
-        offset: ::core::ffi::c_int,
+        size: u32,
+        offset: u32,
     ) -> ::core::ffi::c_int,
 >;
 #[doc = " @brief Write a chunk of file data from buffer to disk.\n\n @param arg Opaque pointer that was provided in @ref osdp_file_ops when the\n ops struct was registered.\n @param buf Buffer with file data to be stored to disk\n @param size Number of bytes to write to disk\n @param offset Number of bytes from the beginning of the file to\n start writing too.\n\n @retval Number of bytes written\n @retval 0 on EOF\n @retval -ve on errors.\n\n @note LibOSDP will guarantee that size and offset params are always\n positive and size is always greater than or equal to offset."]
@@ -767,13 +1428,21 @@ pub type osdp_file_write_fn_t = ::core::option::Option<
     unsafe extern "C" fn(
         arg: *mut ::core::ffi::c_void,
         buf: *const ::core::ffi::c_void,
-        size: ::core::ffi::c_int,
-        offset: ::core::ffi::c_int,
+        size: u32,
+        offset: u32,
     ) -> ::core::ffi::c_int,
 >;
 #[doc = " @brief Close file that corresponds to a given file descriptor\n\n @param arg Opaque pointer that was provided in @ref osdp_file_ops when the\n ops struct was registered.\n\n @retval 0 on success\n @retval -1 on errors."]
 pub type osdp_file_close_fn_t = ::core::option::Option<
     unsafe extern "C" fn(arg: *mut ::core::ffi::c_void) -> ::core::ffi::c_int,
+>;
+#[doc = " @brief Decide how a received file transfer terminates. PD mode only.\n\n Called once the last byte of the file has been received, and again on each\n CP keep-alive for as long as it returns false. While it returns false the PD\n answers osdp_FTSTAT with status 3 (\"finishing\", OSDP v2.2 §7.25) and the\n transfer stays open, so an application can verify, decrypt or install what\n it received without holding up the reply.\n\n Runs on the same context as the other file ops, that is, inside\n osdp_pd_refresh(). It must return promptly on every call; long work belongs\n on another thread, with this callback only reporting whether it has\n finished.\n\n @param arg      Opaque pointer that was provided in @ref osdp_file_ops when\n                 the ops struct was registered.\n @param outcome  Terminal outcome, filled in only when returning true.\n @param delay_ms Hint to the CP for how long to wait before asking again;\n                 carried in the osdp_FTSTAT delay field.\n\n @retval true  Finished; *outcome holds the terminal outcome.\n @retval false Still working; ask again.\n\n @note An unregistered (NULL) finalize behaves as returning true with\n OSDP_MP_OUTCOME_OK, which is what every release before this one did.\n\n @note The transfer remains open for as long as this returns false. If the\n CP misses an osdp_FTSTAT and retransmits its last chunk, LibOSDP re-drives\n @ref osdp_file_write_fn_t with that retransmitted data during this window,\n even into a file the application may already be verifying or installing in\n the background. Applications must tolerate such calls."]
+pub type osdp_file_finalize_fn_t = ::core::option::Option<
+    unsafe extern "C" fn(
+        arg: *mut ::core::ffi::c_void,
+        outcome: *mut osdp_mp_outcome,
+        delay_ms: *mut u16,
+    ) -> bool,
 >;
 #[doc = " @brief OSDP File operations struct that needs to be filled by the CP/PD\n application and registered with LibOSDP using osdp_file_register_ops()\n before a file transfer command can be initiated."]
 #[repr(C)]
@@ -789,6 +1458,8 @@ pub struct osdp_file_ops {
     pub write: osdp_file_write_fn_t,
     #[doc = "< close handler function"]
     pub close: osdp_file_close_fn_t,
+    #[doc = "< finalize handler (optional, PD only)"]
+    pub finalize: osdp_file_finalize_fn_t,
 }
 unsafe extern "C" {
     #[doc = " @brief Register a global file operations struct with OSDP. Both CP and PD\n modes should have done so already before CP can sending a OSDP_CMD_FILE_TX.\n\n @param ctx OSDP context\n @param pd PD number in case of CP. This param is ignored in PD mode\n @param ops Populated file operations struct\n\n @retval 0 on success. -1 on errors."]
@@ -799,11 +1470,11 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query file transfer status if one is in progress. Calling this method\n when there is no file transfer progressing will return error.\n\n @param ctx OSDP context\n @param pd PD number in case of CP. This param is ignored in PD mode\n @param size Total size of the file (as obtained from file_ops->open())\n @param offset Offset into the file that has been sent/received (CP/PD)\n @retval 0 on success. -1 on errors."]
+    #[doc = " @brief Query file transfer status if one is in progress. Calling this method\n when there is no file transfer progressing will return error.\n\n @param ctx OSDP context\n @param pd PD number in case of CP. This param is ignored in PD mode\n @param size Total size of the file (as obtained from file_ops->open())\n @param offset Offset into the file that has been sent/received (CP/PD)\n @retval 0 on success. -1 on errors.\n\n @note This samples the transfer's counters and mutates nothing, so it is\n exempt from the serialization rule documented on osdp_cp_refresh(). The\n values are a snapshot the transfer has likely moved past by the time they\n are used, which is what a progress reading is."]
     pub fn osdp_get_file_tx_status(
         ctx: *const osdp_t,
         pd: ::core::ffi::c_int,
-        size: *mut ::core::ffi::c_int,
-        offset: *mut ::core::ffi::c_int,
+        size: *mut u32,
+        offset: *mut u32,
     ) -> ::core::ffi::c_int;
 }

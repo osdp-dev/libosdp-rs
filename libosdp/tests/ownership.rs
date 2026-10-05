@@ -3,14 +3,19 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#[allow(dead_code)]
+mod common;
+
+use common::memory_channel::MemoryChannel;
 use libosdp::{
-    Channel, ChannelError, ControlPanelBuilder, OsdpError, OsdpFileOps, PdInfoBuilder,
-    PeripheralDevice,
+    Channel, ChannelError, ControlPanel, ControlPanelBuilder, OsdpCommand, OsdpCommandBuzzer,
+    OsdpError, OsdpFileOps, PdCapEntity, PdCapability, PdInfoBuilder, PeripheralDevice,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use std::time::{Duration, Instant};
 
 type Result<T> = core::result::Result<T, OsdpError>;
 
@@ -78,8 +83,8 @@ fn pd_info() -> Result<PdInfoBuilder> {
 #[test]
 fn cp_drop_frees_channel_callback_and_file_ops() -> Result<()> {
     let drops = DropCounter::default();
-    let mut cp = ControlPanelBuilder::new()
-        .add_channel(Box::new(IdleChannel(drops.guard())), vec![pd_info()?])
+    let mut cp = ControlPanelBuilder::new(Box::new(IdleChannel(drops.guard())))
+        .add_pd(pd_info()?)
         .build()?;
     let guard = drops.guard();
     cp.set_event_callback(move |_, _| {
@@ -96,8 +101,8 @@ fn cp_drop_frees_channel_callback_and_file_ops() -> Result<()> {
 #[test]
 fn cp_replacing_callback_frees_the_old_one() -> Result<()> {
     let drops = DropCounter::default();
-    let mut cp = ControlPanelBuilder::new()
-        .add_channel(Box::new(IdleChannel(drops.guard())), vec![pd_info()?])
+    let mut cp = ControlPanelBuilder::new(Box::new(IdleChannel(drops.guard())))
+        .add_pd(pd_info()?)
         .build()?;
     let first = drops.guard();
     cp.set_event_callback(move |_, _| {
@@ -124,5 +129,60 @@ fn pd_drop_frees_channel_callback_and_file_ops() -> Result<()> {
     assert_eq!(drops.count(), 0);
     drop(pd);
     assert_eq!(drops.count(), 3);
+    Ok(())
+}
+
+#[rustfmt::skip]
+const KEY: [u8; 16] = [
+    0x94, 0x4b, 0x8e, 0xdd, 0xcb, 0xaa, 0x2b, 0x5f,
+    0xe2, 0xb0, 0x14, 0x8d, 0x1b, 0x2f, 0x95, 0xc9,
+];
+
+fn secure_pair() -> Result<(ControlPanel, PeripheralDevice)> {
+    let (cp_bus, pd_bus) = MemoryChannel::new();
+    let mut pd = PeripheralDevice::new(
+        pd_info()?
+            .capability(PdCapability::CommunicationSecurity(PdCapEntity::new(1, 1)))
+            .capability(PdCapability::AudibleOutput(PdCapEntity::new(1, 1)))
+            .capability(PdCapability::LedControl(PdCapEntity::new(1, 1)))
+            .secure_channel_key(KEY),
+        Box::new(pd_bus),
+    )?;
+    let mut cp = ControlPanelBuilder::new(Box::new(cp_bus))
+        .add_pd(pd_info()?.secure_channel_key(KEY))
+        .build()?;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !(cp.is_online(0) && cp.is_sc_active(0)) {
+        assert!(Instant::now() < deadline, "secure channel never came up");
+        cp.refresh();
+        pd.refresh();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    Ok((cp, pd))
+}
+
+#[test]
+fn cp_drop_with_commands_queued_frees_them_via_aborted() -> Result<()> {
+    let (mut cp, pd) = secure_pair()?;
+    let buzz = OsdpCommand::Buzzer(OsdpCommandBuzzer {
+        reader: 0,
+        control_code: 1,
+        on_count: 0,
+        off_count: 0,
+        rep_count: 0,
+    });
+    for _ in 0..8 {
+        cp.send_command(0, buzz.clone())?;
+    }
+    drop(cp);
+    drop(pd);
+    Ok(())
+}
+
+#[test]
+fn pd_capabilities_survive_setup() -> Result<()> {
+    let (cp, _pd) = secure_pair()?;
+    let cap = cp.get_capability(0, PdCapability::LedControl(PdCapEntity::new(0, 0)))?;
+    assert_eq!(cap, PdCapability::LedControl(PdCapEntity::new(1, 1)));
     Ok(())
 }

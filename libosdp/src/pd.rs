@@ -13,28 +13,18 @@
 //! to the CP.
 
 use crate::{
-    Channel, OsdpCommand, OsdpError, OsdpEvent, OsdpFileOps, PdCapability, PdInfo, PdInfoBuilder,
+    Channel, OsdpCommand, OsdpError, OsdpEvent, OsdpFileOps, PdCapability, PdInfoBuilder,
 };
 use crate::ffi::{
     callback::{pd_command_trampoline, OwnedCallback, PdCommandCallback},
     channel::OwnedChannel,
     file::OwnedFileOps,
     log::pd_log_handler,
+    submit::pd_event_complete,
 };
 use alloc::{boxed::Box, vec::Vec};
-use core::ffi::c_void;
 
 type Result<T> = core::result::Result<T, OsdpError>;
-
-fn pd_setup(info: PdInfo) -> Result<*mut c_void> {
-    let info: crate::OsdpPdInfoHandle = info.into();
-    let ctx = unsafe { libosdp_sys::osdp_pd_setup(&*info) };
-    if ctx.is_null() {
-        Err(OsdpError::Setup)
-    } else {
-        Ok(ctx)
-    }
-}
 
 /// OSDP Peripheral Device (PD) context
 pub struct PeripheralDevice {
@@ -57,11 +47,22 @@ impl PeripheralDevice {
     /// Create a new Peripheral panel object for the PD described by the corresponding PdInfo struct.
     pub fn new(info: PdInfoBuilder, channel: Box<dyn Channel>) -> Result<Self> {
         unsafe { libosdp_sys::osdp_set_log_callback(Some(pd_log_handler)) };
-        let id = channel.get_id();
         let channel = OwnedChannel::new(channel);
-        let info = info.channel(channel.as_raw(id)).build();
+        let mut raw = channel.as_raw();
+        let info: crate::OsdpPdInfoHandle = info.build().into();
+        let ctx = unsafe { libosdp_sys::osdp_pd_setup(&mut raw, &*info) };
+        if ctx.is_null() {
+            return Err(OsdpError::Setup);
+        }
+        unsafe {
+            libosdp_sys::osdp_pd_set_event_completion_callback(
+                ctx,
+                Some(pd_event_complete),
+                core::ptr::null_mut(),
+            )
+        };
         Ok(Self {
-            ctx: pd_setup(info)?,
+            ctx,
             channel,
             command_callback: None,
             file_ops: None,
@@ -90,11 +91,13 @@ impl PeripheralDevice {
         let _ = unsafe { libosdp_sys::osdp_pd_flush_events(self.ctx) };
     }
 
-    /// Queue and a [`OsdpEvent`] for this PD. This will be delivered to CP in
+    /// Queue an [`OsdpEvent`] for this PD. This will be delivered to CP in
     /// the next POLL.
     pub fn notify_event(&mut self, event: OsdpEvent) -> Result<()> {
-        let rc = unsafe { libosdp_sys::osdp_pd_notify_event(self.ctx, &event.into()) };
+        let event = Box::into_raw(Box::new(libosdp_sys::osdp_event::from(event)));
+        let rc = unsafe { libosdp_sys::osdp_pd_submit_event(self.ctx, event) };
         if rc < 0 {
+            drop(unsafe { Box::from_raw(event) });
             Err(OsdpError::Event)
         } else {
             Ok(())
@@ -147,20 +150,15 @@ impl PeripheralDevice {
 
     /// Get status of the ongoing file transfer of PD
     pub fn file_transfer_status(&self) -> Result<(i32, i32)> {
-        let mut size: i32 = 0;
-        let mut offset: i32 = 0;
+        let mut size: u32 = 0;
+        let mut offset: u32 = 0;
         let rc = unsafe {
-            libosdp_sys::osdp_get_file_tx_status(
-                self.ctx,
-                0,
-                &mut size as *mut i32,
-                &mut offset as *mut i32,
-            )
+            libosdp_sys::osdp_get_file_tx_status(self.ctx, 0, &mut size, &mut offset)
         };
         if rc < 0 {
             Err(OsdpError::FileTransfer("Not not in progress"))
         } else {
-            Ok((size, offset))
+            Ok((size as i32, offset as i32))
         }
     }
 

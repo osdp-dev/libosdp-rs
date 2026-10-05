@@ -11,14 +11,14 @@ use defmt::error;
 #[cfg(all(feature = "log", not(feature = "defmt")))]
 use log::error;
 
-unsafe extern "C" fn file_open(data: *mut c_void, file_id: i32, size: *mut i32) -> i32 {
+unsafe extern "C" fn file_open(data: *mut c_void, file_id: i32, size: *mut u32) -> i32 {
     let ctx: *mut Box<dyn OsdpFileOps> = data as *mut _;
     let ctx = ctx.as_mut().unwrap();
     let read_only = *size == 0;
     match ctx.open(file_id, read_only) {
         Ok(file_size) => {
             if read_only {
-                *size = file_size as i32;
+                *size = file_size as u32;
             }
             0
         }
@@ -30,8 +30,8 @@ unsafe extern "C" fn file_open(data: *mut c_void, file_id: i32, size: *mut i32) 
     }
 }
 
-unsafe extern "C" fn file_read(data: *mut c_void, buf: *mut c_void, size: i32, offset: i32) -> i32 {
-    if buf.is_null() || size < 0 {
+unsafe extern "C" fn file_read(data: *mut c_void, buf: *mut c_void, size: u32, offset: u32) -> i32 {
+    if buf.is_null() {
         return -1;
     }
     let ctx = unsafe { &*(data as *const Box<dyn OsdpFileOps>) };
@@ -56,8 +56,8 @@ unsafe extern "C" fn file_read(data: *mut c_void, buf: *mut c_void, size: i32, o
 unsafe extern "C" fn file_write(
     data: *mut c_void,
     buf: *const c_void,
-    size: i32,
-    offset: i32,
+    size: u32,
+    offset: u32,
 ) -> i32 {
     let ctx: *mut Box<dyn OsdpFileOps> = data as *mut _;
     let ctx = ctx.as_ref().unwrap();
@@ -109,6 +109,7 @@ impl OwnedFileOps {
             read: Some(file_read),
             write: Some(file_write),
             close: Some(file_close),
+            finalize: None,
         }
     }
 }
@@ -163,28 +164,11 @@ mod tests {
         }
     }
 
-    struct PanicOnRead;
-
-    impl OsdpFileOps for PanicOnRead {
-        fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, crate::OsdpError> {
-            Ok(0)
-        }
-        fn offset_read(&self, _: &mut [u8], _: u64) -> core::result::Result<usize, crate::OsdpError> {
-            panic!("offset_read should not be called with negative size")
-        }
-        fn offset_write(&self, _: &[u8], _: u64) -> core::result::Result<usize, crate::OsdpError> {
-            Ok(0)
-        }
-        fn close(&mut self) -> core::result::Result<(), crate::OsdpError> {
-            Ok(())
-        }
-    }
-
     #[test]
     fn failed_read_reports_error_and_writes_nothing() {
         let ops = OwnedFileOps::new(Box::new(FailingRead));
         let mut buf = [0xEEu8; 8];
-        let rc = unsafe { file_read(ops.data(), buf.as_mut_ptr().cast(), 8, 0) };
+        let rc = unsafe { file_read(ops.data(), buf.as_mut_ptr().cast(), 8u32, 0u32) };
         assert_eq!(rc, -1);
         assert_eq!(buf, [0xEE; 8]);
     }
@@ -193,15 +177,7 @@ mod tests {
     fn file_read_rejects_over_reported_count() {
         let ops = OwnedFileOps::new(Box::new(OverReportingRead));
         let mut buf = [0xEEu8; 8];
-        let rc = unsafe { file_read(ops.data(), buf.as_mut_ptr().cast(), 8, 0) };
-        assert_eq!(rc, -1);
-    }
-
-    #[test]
-    fn file_read_rejects_negative_size() {
-        let ops = OwnedFileOps::new(Box::new(PanicOnRead));
-        let mut buf = [0xEEu8; 8];
-        let rc = unsafe { file_read(ops.data(), buf.as_mut_ptr().cast(), -1, 0) };
+        let rc = unsafe { file_read(ops.data(), buf.as_mut_ptr().cast(), 8u32, 0u32) };
         assert_eq!(rc, -1);
     }
 }

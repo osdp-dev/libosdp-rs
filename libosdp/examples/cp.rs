@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -63,8 +63,8 @@ fn main() -> Result<(), OsdpError> {
         .baud_rate(115200)?
         .flag(OsdpFlag::EnforceSecure)
         .secure_channel_key(pd_0_key);
-    let mut cp = libosdp::ControlPanelBuilder::new()
-        .add_channel(Box::new(channel), vec![pd_0])
+    let mut cp = libosdp::ControlPanelBuilder::new(Box::new(channel))
+        .add_pd(pd_0)
         .build()?;
     loop {
         cp.refresh();

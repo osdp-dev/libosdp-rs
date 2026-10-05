@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2024-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -130,6 +130,7 @@ fn test_file_transfer() -> Result<()> {
     let cp = CpDevice::new(Box::new(cp_bus))?;
 
     create_random_file("/tmp/ftx_test.in", 50 * 1024);
+    let _ = std::fs::remove_file("/tmp/ftx_test.out");
 
     thread::sleep(Duration::from_secs(2));
 
@@ -152,13 +153,20 @@ fn test_file_transfer() -> Result<()> {
         "PD file tx command callback verification failed!"
     );
 
+    let expected_len = std::fs::metadata("/tmp/ftx_test.in").unwrap().len();
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
     loop {
-        let (size, offset) = pd.get_device().file_transfer_status()?;
-        log::info!("File TX in progress: size:{size} offset:{offset}");
-        if size == offset {
-            break;
+        match pd.get_device().file_transfer_status() {
+            Ok((size, offset)) => log::info!("File TX in progress: size:{size} offset:{offset}"),
+            Err(_) => {
+                let received = std::fs::metadata("/tmp/ftx_test.out").map(|m| m.len()).unwrap_or(0);
+                if received == expected_len {
+                    break;
+                }
+            }
         }
-        thread::sleep(Duration::from_secs(1));
+        assert!(std::time::Instant::now() < deadline, "file transfer did not finish in time");
+        thread::sleep(Duration::from_millis(200));
     }
 
     assert_eq!(

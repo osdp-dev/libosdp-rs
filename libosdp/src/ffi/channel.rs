@@ -65,15 +65,12 @@ impl OwnedChannel {
         self.0 as *mut c_void
     }
 
-    pub(crate) fn as_raw(&self, id: i32) -> libosdp_sys::osdp_channel {
+    pub(crate) fn as_raw(&self) -> libosdp_sys::osdp_channel {
         libosdp_sys::osdp_channel {
-            id,
             data: self.data(),
             recv: Some(raw_read),
-            recv_pkt: None,
             send: Some(raw_write),
             flush: Some(raw_flush),
-            release_pkt: None,
             close: Some(raw_close),
         }
     }

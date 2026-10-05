@@ -54,6 +54,8 @@ pub trait Channel: Send {
     /// connections among PDs it needs a way to identify each unique channel by
     /// a channel ID. Implementors of this trait must also provide a method
     /// which returns a unique i32 per channel.
+    ///
+    /// Ignored since LibOSDP 4.0, which takes one channel per context.
     fn get_id(&self) -> i32;
 
     /// Pull as many bytes into buffer as possible; returns the number of bytes

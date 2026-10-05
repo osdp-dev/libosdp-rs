@@ -141,7 +141,7 @@ impl TryFrom<libosdp_sys::osdp_event_cardread> for OsdpEventCardRead {
 impl From<OsdpEventCardRead> for libosdp_sys::osdp_event_cardread {
     fn from(value: OsdpEventCardRead) -> Self {
         let mut data = [0; libosdp_sys::OSDP_EVENT_CARDREAD_MAX_DATALEN as usize];
-        let length = value.nr_bits as i32;
+        let length = value.nr_bits as u16;
         data[..value.data.len()].copy_from_slice(&value.data[..]);
         libosdp_sys::osdp_event_cardread {
             reader_no: value.reader_no,
@@ -246,8 +246,8 @@ pub enum OsdpStatusReportType {
     Input,
     /// Output status report
     Output,
-    /// Remote status report
-    Remote,
+    /// Reader tamper status; one byte per attached reader (0 normal, 1 not connected, 2 tamper)
+    Reader,
     /// Local status report
     Local,
 }
@@ -263,8 +263,8 @@ impl TryFrom<libosdp_sys::osdp_status_report_type> for OsdpStatusReportType {
             libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_OUTPUT => {
                 Ok(OsdpStatusReportType::Output)
             }
-            libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_REMOTE => {
-                Ok(OsdpStatusReportType::Remote)
+            libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_READER => {
+                Ok(OsdpStatusReportType::Reader)
             }
             libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_LOCAL => {
                 Ok(OsdpStatusReportType::Local)
@@ -283,8 +283,8 @@ impl From<OsdpStatusReportType> for libosdp_sys::osdp_status_report_type {
             OsdpStatusReportType::Output => {
                 libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_OUTPUT
             }
-            OsdpStatusReportType::Remote => {
-                libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_REMOTE
+            OsdpStatusReportType::Reader => {
+                libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_READER
             }
             OsdpStatusReportType::Local => {
                 libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_LOCAL
