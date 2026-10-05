@@ -131,17 +131,14 @@ impl PeripheralDevice {
         self.command_callback = Some(callback);
     }
 
-    /// Check online status of a PD identified by the offset number (in PdInfo
-    /// vector in [`PeripheralDevice::new`]).
+    /// Check whether a CP is talking to this PD.
     pub fn is_online(&self) -> bool {
         let mut buf: u8 = 0;
         unsafe { libosdp_sys::osdp_get_status_mask(self.ctx, &mut buf as *mut u8) };
         buf != 0
     }
 
-    /// Check secure channel status of a PD identified by the offset number
-    /// (in PdInfo vector in [`PeripheralDevice::new`]). Returns (size, offset)
-    /// of the current file transfer operation.
+    /// Check whether the secure channel with the CP is active.
     pub fn is_sc_active(&self) -> bool {
         let mut buf: u8 = 0;
         unsafe { libosdp_sys::osdp_get_sc_status_mask(self.ctx, &mut buf as *mut u8) };

@@ -10,15 +10,19 @@ use std::{sync::MutexGuard, thread, time};
 
 use libosdp::{
     Channel, ControlPanel, OsdpCommand, OsdpCommandBuzzer, OsdpEvent, OsdpEventCardRead,
-    PeripheralDevice,
+    PdIndex, PeripheralDevice,
 };
 
 use crate::common::{
     device::CpDevice, device::PdDevice, memory_channel::MemoryChannel, threadbus::ThreadBus,
 };
 
-fn send_command(mut cp: MutexGuard<'_, ControlPanel>, command: OsdpCommand) -> Result<()> {
-    cp.send_command(0, command)
+fn send_command(
+    mut cp: MutexGuard<'_, ControlPanel>,
+    pd: PdIndex,
+    command: OsdpCommand,
+) -> Result<()> {
+    cp.send_command(pd, command)
 }
 
 fn notify_event(mut pd: MutexGuard<'_, PeripheralDevice>, event: OsdpEvent) -> Result<()> {
@@ -62,7 +66,7 @@ fn test_commands() -> Result<()> {
         rep_count: 0,
     };
     let command = OsdpCommand::Buzzer(data);
-    send_command(cp.get_device(), command.clone())?;
+    send_command(cp.get_device(), cp.pd, command.clone())?;
     let cmd_rx = pd.receiver.recv().unwrap();
     assert_eq!(cmd_rx, command, "Buzzer command check failed");
 
@@ -70,7 +74,7 @@ fn test_commands() -> Result<()> {
     notify_event(pd.get_device(), event.clone())?;
     assert_eq!(
         cp.receiver.recv().unwrap(),
-        (0_i32, event),
+        (cp.pd, event),
         "Card read event check failed"
     );
 

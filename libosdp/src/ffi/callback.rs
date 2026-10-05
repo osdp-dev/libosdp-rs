@@ -3,10 +3,10 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{OsdpCommand, OsdpEvent};
+use crate::{OsdpCommand, OsdpEvent, PdIndex};
 use core::ffi::c_void;
 
-pub(crate) type CpEventCallback = alloc::boxed::Box<dyn FnMut(i32, OsdpEvent) -> i32 + Send>;
+pub(crate) type CpEventCallback = alloc::boxed::Box<dyn FnMut(PdIndex, OsdpEvent) -> i32 + Send>;
 pub(crate) type PdCommandCallback = alloc::boxed::Box<dyn FnMut(&mut OsdpCommand) -> i32 + Send>;
 
 pub(crate) unsafe extern "C" fn cp_event_trampoline(
@@ -17,7 +17,7 @@ pub(crate) unsafe extern "C" fn cp_event_trampoline(
     match unsafe { core::ptr::read_unaligned(event).try_into() } {
         Ok(event) => {
             let callback = unsafe { &mut *(data as *mut CpEventCallback) };
-            callback(pd, event)
+            callback(PdIndex::new(pd as u8), event)
         }
         Err(_) => -1, // Failed to parse the event data -> Send NAK
     }

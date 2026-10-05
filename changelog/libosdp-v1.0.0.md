@@ -12,6 +12,9 @@ Release subject ## TODO
   wrong (Setup, InvalidArgument, Rejected, NotInProgress, TooLong,
   Malformed, Channel) rather than which call failed. FileOps
   implementations return the new FileError
+- cp: Address PDs by the PdIndex that ControlPanelBuilder::add_pd
+  returns rather than by an integer offset. add_pd now takes &mut self
+  and refuses a 127th PD when it is added, not at build()
 
 ## Enhancements
 

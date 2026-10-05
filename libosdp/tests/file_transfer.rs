@@ -128,7 +128,7 @@ fn test_file_transfer() -> Result<()> {
     let mut fm = OsdpFileManager::new();
     fm.register_file(1, "/tmp/ftx_test.in");
 
-    cp.get_device().register_file_ops(0, Box::new(fm))?;
+    cp.get_device().register_file_ops(cp.pd, Box::new(fm))?;
 
     let mut fm = OsdpFileManager::new();
     fm.register_file(1, "/tmp/ftx_test.out");
@@ -136,7 +136,7 @@ fn test_file_transfer() -> Result<()> {
     pd.get_device().register_file_ops(Box::new(fm))?;
 
     let command = OsdpCommand::FileTx(OsdpCommandFileTx {id: 1, flags: 0});
-    cp.get_device().send_command(0, command.clone())?;
+    cp.get_device().send_command(cp.pd, command.clone())?;
 
     assert_eq!(
         pd.receiver.recv().unwrap(),

@@ -8,8 +8,9 @@ mod common;
 
 use common::memory_channel::MemoryChannel;
 use libosdp::{
-    Channel, ChannelError, ControlPanel, ControlPanelBuilder, OsdpCommand, OsdpCommandBuzzer,
-    Error, FileError, OsdpFileOps, PdCapEntity, PdCapability, PdInfoBuilder, PeripheralDevice,
+    Channel, ChannelError, ControlPanel, ControlPanelBuilder, Error, FileError, OsdpCommand,
+    OsdpCommandBuzzer, OsdpFileOps, PdCapEntity, PdCapability, PdIndex, PdInfoBuilder,
+    PeripheralDevice,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -83,15 +84,15 @@ fn pd_info() -> Result<PdInfoBuilder> {
 #[test]
 fn cp_drop_frees_channel_callback_and_file_ops() -> Result<()> {
     let drops = DropCounter::default();
-    let mut cp = ControlPanelBuilder::new(Box::new(IdleChannel(drops.guard())))
-        .add_pd(pd_info()?)
-        .build()?;
+    let mut builder = ControlPanelBuilder::new(Box::new(IdleChannel(drops.guard())));
+    let pd = builder.add_pd(pd_info()?)?;
+    let mut cp = builder.build()?;
     let guard = drops.guard();
     cp.set_event_callback(move |_, _| {
         let _ = &guard;
         0
     });
-    cp.register_file_ops(0, Box::new(NoFiles(drops.guard())))?;
+    cp.register_file_ops(pd, Box::new(NoFiles(drops.guard())))?;
     assert_eq!(drops.count(), 0);
     drop(cp);
     assert_eq!(drops.count(), 3);
@@ -101,9 +102,9 @@ fn cp_drop_frees_channel_callback_and_file_ops() -> Result<()> {
 #[test]
 fn cp_replacing_callback_frees_the_old_one() -> Result<()> {
     let drops = DropCounter::default();
-    let mut cp = ControlPanelBuilder::new(Box::new(IdleChannel(drops.guard())))
-        .add_pd(pd_info()?)
-        .build()?;
+    let mut builder = ControlPanelBuilder::new(Box::new(IdleChannel(drops.guard())));
+    builder.add_pd(pd_info()?)?;
+    let mut cp = builder.build()?;
     let first = drops.guard();
     cp.set_event_callback(move |_, _| {
         let _ = &first;
@@ -138,7 +139,7 @@ const KEY: [u8; 16] = [
     0xe2, 0xb0, 0x14, 0x8d, 0x1b, 0x2f, 0x95, 0xc9,
 ];
 
-fn secure_pair() -> Result<(ControlPanel, PeripheralDevice)> {
+fn secure_pair() -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
     let (cp_bus, pd_bus) = MemoryChannel::new();
     let mut pd = PeripheralDevice::new(
         pd_info()?
@@ -148,22 +149,22 @@ fn secure_pair() -> Result<(ControlPanel, PeripheralDevice)> {
             .secure_channel_key(KEY),
         Box::new(pd_bus),
     )?;
-    let mut cp = ControlPanelBuilder::new(Box::new(cp_bus))
-        .add_pd(pd_info()?.secure_channel_key(KEY))
-        .build()?;
+    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
+    let target = builder.add_pd(pd_info()?.secure_channel_key(KEY))?;
+    let mut cp = builder.build()?;
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !(cp.is_online(0) && cp.is_sc_active(0)) {
+    while !(cp.is_online(target) && cp.is_sc_active(target)) {
         assert!(Instant::now() < deadline, "secure channel never came up");
         cp.refresh();
         pd.refresh();
         std::thread::sleep(Duration::from_millis(5));
     }
-    Ok((cp, pd))
+    Ok((cp, target, pd))
 }
 
 #[test]
 fn cp_drop_with_commands_queued_frees_them_via_aborted() -> Result<()> {
-    let (mut cp, pd) = secure_pair()?;
+    let (mut cp, target, pd) = secure_pair()?;
     let buzz = OsdpCommand::Buzzer(OsdpCommandBuzzer {
         reader: 0,
         control_code: 1,
@@ -172,7 +173,7 @@ fn cp_drop_with_commands_queued_frees_them_via_aborted() -> Result<()> {
         rep_count: 0,
     });
     for _ in 0..8 {
-        cp.send_command(0, buzz.clone())?;
+        cp.send_command(target, buzz.clone())?;
     }
     drop(cp);
     drop(pd);
@@ -181,8 +182,8 @@ fn cp_drop_with_commands_queued_frees_them_via_aborted() -> Result<()> {
 
 #[test]
 fn pd_capabilities_survive_setup() -> Result<()> {
-    let (cp, _pd) = secure_pair()?;
-    let cap = cp.get_capability(0, PdCapability::LedControl(PdCapEntity::new(0, 0)))?;
+    let (cp, target, _pd) = secure_pair()?;
+    let cap = cp.get_capability(target, PdCapability::LedControl(PdCapEntity::new(0, 0)))?;
     assert_eq!(cap, PdCapability::LedControl(PdCapEntity::new(1, 1)));
     Ok(())
 }

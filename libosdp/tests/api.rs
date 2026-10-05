@@ -3,7 +3,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use libosdp::{Channel, ChannelError, ControlPanelBuilder, Error, FileError, PdInfoBuilder};
+use libosdp::{
+    Channel, ChannelError, ControlPanelBuilder, Error, FileError, PdInfoBuilder,
+};
 
 struct Idle;
 
@@ -39,10 +41,10 @@ fn builder_reports_the_bad_argument() {
 
 #[test]
 fn file_status_outside_a_transfer_is_not_in_progress() -> Result<(), Error> {
-    let cp = ControlPanelBuilder::new(Box::new(Idle))
-        .add_pd(PdInfoBuilder::new().address(101)?.baud_rate(115200)?)
-        .build()?;
-    assert_eq!(cp.file_transfer_status(0), Err(Error::NotInProgress));
+    let mut builder = ControlPanelBuilder::new(Box::new(Idle));
+    let pd = builder.add_pd(PdInfoBuilder::new().address(101)?.baud_rate(115200)?)?;
+    let cp = builder.build()?;
+    assert_eq!(cp.file_transfer_status(pd), Err(Error::NotInProgress));
     Ok(())
 }
 
@@ -60,4 +62,33 @@ fn io_errors_convert_into_file_errors() {
     assert_eq!(FileError::from(missing), FileError::NotFound);
     let other = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
     assert_eq!(FileError::from(other), FileError::Io);
+}
+
+fn pd_at(address: i32) -> Result<PdInfoBuilder, Error> {
+    PdInfoBuilder::new().address(address)?.baud_rate(115200)
+}
+
+#[test]
+fn builder_hands_out_indexes_in_the_order_pds_were_added() -> Result<(), Error> {
+    let mut builder = ControlPanelBuilder::new(Box::new(Idle));
+    let first = builder.add_pd(pd_at(101)?)?;
+    let second = builder.add_pd(pd_at(102)?)?;
+    assert_eq!(usize::from(first), 0);
+    assert_eq!(usize::from(second), 1);
+    let cp = builder.build()?;
+    assert!(!cp.is_online(second));
+    Ok(())
+}
+
+#[test]
+fn builder_refuses_more_pds_than_a_bus_can_address() -> Result<(), Error> {
+    let mut builder = ControlPanelBuilder::new(Box::new(Idle));
+    for address in 0..126 {
+        builder.add_pd(pd_at(address)?)?;
+    }
+    assert!(matches!(
+        builder.add_pd(pd_at(126)?),
+        Err(Error::InvalidArgument(_))
+    ));
+    Ok(())
 }

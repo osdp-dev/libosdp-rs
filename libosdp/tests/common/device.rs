@@ -10,14 +10,15 @@ use std::{
 
 use libosdp::{
     ControlPanel, ControlPanelBuilder, OsdpCommand, OsdpEvent, PdCapEntity, PdCapability,
-    PdInfoBuilder, PeripheralDevice,
+    PdIndex, PdInfoBuilder, PeripheralDevice,
 };
 type Result<T> = core::result::Result<T, libosdp::Error>;
 
 pub struct CpDevice {
     dev: Arc<Mutex<ControlPanel>>,
     #[allow(unused)] // false positive, it is used!
-    pub receiver: Receiver<(i32, OsdpEvent)>,
+    pub receiver: Receiver<(PdIndex, OsdpEvent)>,
+    pub pd: PdIndex,
 }
 
 impl CpDevice {
@@ -33,8 +34,10 @@ impl CpDevice {
             .address(101)?
             .baud_rate(115200)?
             .secure_channel_key(pd_0_key);
-        let cp = ControlPanelBuilder::new(bus).add_pd(pd_0).build()?;
-        let (event_tx, event_rx) = std::sync::mpsc::channel::<(i32, OsdpEvent)>();
+        let mut builder = ControlPanelBuilder::new(bus);
+        let pd = builder.add_pd(pd_0)?;
+        let cp = builder.build()?;
+        let (event_tx, event_rx) = std::sync::mpsc::channel::<(PdIndex, OsdpEvent)>();
 
         let dev = Arc::new(Mutex::new(cp));
         let dev_clone = dev.clone();
@@ -55,6 +58,7 @@ impl CpDevice {
         Ok(Self {
             dev,
             receiver: event_rx,
+            pd,
         })
     }
 

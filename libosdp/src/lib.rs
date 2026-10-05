@@ -35,10 +35,11 @@
 //! devices to communicate with other osdp devices on the bus. Then you describe the PD you are
 //!   - talking to on the bus (in case of CP mode of operation) or,
 //!   - going to behave as on the bus (in case of PD mode of operation)
-//! by using the [`PdInfo`] struct.
+//! by using a [`PdInfoBuilder`].
 //!
-//! You can use the `PdInfo` (or a vector of `PdInfo` structs in case of CP mode) to create a
-//! [`ControlPanel`] or [`PeripheralDevice`] context. Both these contexts have a non-blocking
+//! In CP mode, add each PD's `PdInfoBuilder` to a [`ControlPanelBuilder`], which hands back the
+//! [`PdIndex`] that addresses it, and build a [`ControlPanel`]. In PD mode, pass the one
+//! `PdInfoBuilder` to [`PeripheralDevice::new`]. Both these contexts have a non-blocking
 //! method `refresh()` that needs to called as frequently as your app can permit. To meet the OSDP
 //! specified timing requirements, your app must call this method at least once every 50ms.
 //!
@@ -88,7 +89,7 @@ pub use pdinfo::*;
 
 use alloc::{borrow::ToOwned, string::String};
 
-pub use cp::{ControlPanel, ControlPanelBuilder};
+pub use cp::{ControlPanel, ControlPanelBuilder, PdIndex};
 pub use error::{Error, FileError};
 pub use pd::PeripheralDevice;
 

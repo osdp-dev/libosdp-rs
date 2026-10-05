@@ -63,9 +63,9 @@ fn main() -> Result<(), Error> {
         .baud_rate(115200)?
         .flag(OsdpFlag::EnforceSecure)
         .secure_channel_key(pd_0_key);
-    let mut cp = libosdp::ControlPanelBuilder::new(Box::new(channel))
-        .add_pd(pd_0)
-        .build()?;
+    let mut builder = libosdp::ControlPanelBuilder::new(Box::new(channel));
+    builder.add_pd(pd_0)?;
+    let mut cp = builder.build()?;
     loop {
         cp.refresh();
         thread::sleep(Duration::from_millis(50));
