@@ -17,7 +17,7 @@ pub(crate) unsafe extern "C" fn cp_log_handler(
 ) {
     #[cfg(any(feature = "log", feature = "defmt"))]
     {
-        let msg = crate::cstr_to_string(_msg);
+        let msg = unsafe { core::ffi::CStr::from_ptr(_msg) }.to_string_lossy();
         let msg = msg.trim();
         match _log_level as libosdp_sys::osdp_log_level_e {
             libosdp_sys::osdp_log_level_e_OSDP_LOG_EMERG => error!("CP: {}", msg),
@@ -27,8 +27,7 @@ pub(crate) unsafe extern "C" fn cp_log_handler(
             libosdp_sys::osdp_log_level_e_OSDP_LOG_WARNING => warn!("CP: {}", msg),
             libosdp_sys::osdp_log_level_e_OSDP_LOG_NOTICE => warn!("CP: {}", msg),
             libosdp_sys::osdp_log_level_e_OSDP_LOG_INFO => info!("CP: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_DEBUG => debug!("CP: {}", msg),
-            _ => panic!("Unknown log level"),
+            _ => debug!("CP: {}", msg),
         };
     }
 }
@@ -42,7 +41,7 @@ pub(crate) unsafe extern "C" fn pd_log_handler(
 ) {
     #[cfg(any(feature = "log", feature = "defmt"))]
     {
-        let msg = crate::cstr_to_string(_msg);
+        let msg = unsafe { core::ffi::CStr::from_ptr(_msg) }.to_string_lossy();
         let msg = msg.trim();
         match _log_level as libosdp_sys::osdp_log_level_e {
             libosdp_sys::osdp_log_level_e_OSDP_LOG_EMERG => error!("PD: {}", msg),
@@ -52,8 +51,7 @@ pub(crate) unsafe extern "C" fn pd_log_handler(
             libosdp_sys::osdp_log_level_e_OSDP_LOG_WARNING => warn!("PD: {}", msg),
             libosdp_sys::osdp_log_level_e_OSDP_LOG_NOTICE => warn!("PD: {}", msg),
             libosdp_sys::osdp_log_level_e_OSDP_LOG_INFO => info!("PD: {}", msg),
-            libosdp_sys::osdp_log_level_e_OSDP_LOG_DEBUG => debug!("PD: {}", msg),
-            _ => panic!("Unknown log level"),
+            _ => debug!("PD: {}", msg),
         };
     }
 }

@@ -84,9 +84,7 @@ pub struct CardRead {
     /// true - Backward
     pub direction: bool,
 
-    /// Number of valid data bits in [`CardRead::data`] when the card
-    /// format is not [`CardFormat::Ascii`]. For [`CardFormat::Ascii`], this
-    /// field is set to zero.
+    /// Number of valid data bits in [`CardRead::data`].
     pub nr_bits: usize,
 
     /// Card data; bytes or bits depending on [`CardFormat`]

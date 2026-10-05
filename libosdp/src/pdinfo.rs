@@ -152,7 +152,7 @@ impl PdInfoBuilder {
     }
 
     /// Set PD name; a user provided name for this PD (log messages include this
-    /// name defaults to pd-<address>)
+    /// name defaults to `pd-<address>`)
     pub fn name(mut self, name: &str) -> Result<PdInfoBuilder, Error> {
         let name = CString::new(name).map_err(|_| Error::InvalidArgument("PD name contains a NUL"))?;
         self.name = Some(name);

@@ -17,7 +17,7 @@ use crate::common::{
     device::CpDevice, device::PdDevice, memory_channel::MemoryChannel, threadbus::ThreadBus,
 };
 
-fn send_command(
+fn submit_command(
     cp: MutexGuard<'_, ControlPanel>,
     pd: PdIndex,
     command: Command,
@@ -26,7 +26,7 @@ fn send_command(
     Ok(())
 }
 
-fn notify_event(pd: MutexGuard<'_, PeripheralDevice>, event: Event) -> Result<()> {
+fn submit_event(pd: MutexGuard<'_, PeripheralDevice>, event: Event) -> Result<()> {
     pd.submit(event)?;
     Ok(())
 }
@@ -69,12 +69,12 @@ fn test_commands() -> Result<()> {
         },
     };
     let command = Command::Buzzer(data);
-    send_command(cp.get_device(), cp.pd, command.clone())?;
+    submit_command(cp.get_device(), cp.pd, command.clone())?;
     let cmd_rx = pd.receiver.recv().unwrap();
     assert_eq!(cmd_rx, command, "Buzzer command check failed");
 
     let event = Event::CardRead(CardRead::new_raw(vec![0x55, 0xAA]));
-    notify_event(pd.get_device(), event.clone())?;
+    submit_event(pd.get_device(), event.clone())?;
     assert_eq!(
         cp.receiver.recv().unwrap(),
         (cp.pd, event),

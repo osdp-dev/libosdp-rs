@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -53,13 +53,6 @@ impl From<libosdp_sys::osdp_pd_id> for PdId {
 }
 
 impl ConvertEndian for [u8; 4] {
-    fn as_be(&self) -> u32 {
-        ((self[0] as u32) << 24)
-            | ((self[1] as u32) << 16)
-            | ((self[2] as u32) << 8)
-            | (self[3] as u32)
-    }
-
     fn as_le(&self) -> u32 {
         (self[0] as u32)
             | ((self[1] as u32) << 8)
@@ -69,10 +62,6 @@ impl ConvertEndian for [u8; 4] {
 }
 
 impl ConvertEndian for (u8, u8, u8) {
-    fn as_be(&self) -> u32 {
-        ((self.0 as u32) << 24) | ((self.1 as u32) << 16) | ((self.2 as u32) << 8)
-    }
-
     fn as_le(&self) -> u32 {
         (self.0 as u32) | ((self.1 as u32) << 8) | ((self.2 as u32) << 16)
     }

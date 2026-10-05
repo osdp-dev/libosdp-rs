@@ -90,18 +90,13 @@ pub use pdcap::*;
 pub use pdid::*;
 pub use pdinfo::*;
 
-use alloc::{borrow::ToOwned, string::String};
-
 pub use cp::{ControlPanel, ControlPanelBuilder, CpEvent, PdIndex};
 pub use error::{CompletionError, Error, FileError, Nak};
 pub use pd::{CommandHandler, PeripheralDevice, Responder};
 pub use submit::Submission;
 
-/// Trait to convert between BigEndian and LittleEndian types
-pub trait ConvertEndian {
-    /// Return `Self` as BigEndian
-    fn as_be(&self) -> u32;
-    /// Return `Self` as LittleEndian
+/// Packs bytes into the little-endian `u32` LibOSDP expects.
+pub(crate) trait ConvertEndian {
     fn as_le(&self) -> u32;
 }
 
@@ -143,12 +138,6 @@ impl core::str::FromStr for Flag {
             _ => Err(Error::InvalidArgument("unknown flag name")),
         }
     }
-}
-
-#[allow(dead_code)]
-fn cstr_to_string(s: *const ::core::ffi::c_char) -> String {
-    let s = unsafe { core::ffi::CStr::from_ptr(s) };
-    s.to_str().unwrap().to_owned()
 }
 
 /// Get LibOSDP version

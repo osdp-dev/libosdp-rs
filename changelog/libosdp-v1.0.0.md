@@ -51,6 +51,8 @@ Release subject ## TODO
   OutputCommand an OutputAction; TextCommand a TextMode. Their
   timings are Durations, and submit refuses one that is not a whole
   number of LibOSDP's units or does not fit
+- libosdp: Make ConvertEndian private; it only packed vendor codes
+  and IDs for LibOSDP
 
 ## Enhancements
 

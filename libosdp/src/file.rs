@@ -24,13 +24,13 @@ type Result<T> = core::result::Result<T, crate::FileError>;
 /// }
 /// ```
 pub trait FileOps: Send {
-    /// Open a file, with pre-agreed File-ID [`id`]; returns the size of the
+    /// Open a file, with pre-agreed File-ID `id`; returns the size of the
     /// file that was opened.
     fn open(&mut self, id: i32, read_only: bool) -> Result<usize>;
-    /// Read bytes into buffer [`buf`] from offset [`off`] of the file; returns
+    /// Read bytes into buffer `buf` from offset `off` of the file; returns
     /// number of bytes read.
     fn offset_read(&self, buf: &mut [u8], off: u64) -> Result<usize>;
-    /// Write bytes from buffer [`buf`] at offset [`off`] of the file; returns
+    /// Write bytes from buffer `buf` at offset `off` of the file; returns
     /// number of bytes written.
     fn offset_write(&self, buf: &[u8], off: u64) -> Result<usize>;
     /// Close the currently open file.
