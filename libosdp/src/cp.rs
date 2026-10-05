@@ -10,8 +10,13 @@ use crate::{
     file::OsdpFileOps, Channel, OsdpCommand, OsdpError, OsdpEvent, OsdpFlag, PdCapability, PdId,
     PdInfoBuilder,
 };
-use crate::ffi::{callback::get_cp_event_trampoline, log::cp_log_handler};
-use alloc::{boxed::Box, vec::Vec};
+use crate::ffi::{
+    callback::{cp_event_trampoline, CpEventCallback, OwnedCallback},
+    channel::OwnedChannel,
+    file::OwnedFileOps,
+    log::cp_log_handler,
+};
+use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
 use core::ffi::c_void;
 
 type Result<T> = core::result::Result<T, OsdpError>;
@@ -47,31 +52,41 @@ impl ControlPanelBuilder {
 
     /// Build the [`ControlPanel`] instance.
     pub fn build(self) -> Result<ControlPanel> {
-        if self.channel_pds.len() > 126 {
+        let mut channels = Vec::new();
+        let mut info: Vec<crate::OsdpPdInfoHandle> = Vec::new();
+        for (channel, pd_info) in self.channel_pds {
+            let id = channel.get_id();
+            let owned = OwnedChannel::new(channel);
+            let raw = owned.as_raw(id);
+            channels.push(owned);
+            info.extend(pd_info.into_iter().map(|pd| pd.channel(raw).build().into()));
+        }
+        if info.len() > 126 {
             return Err(OsdpError::PdInfo("max PD count exceeded"));
         }
-        let info: Vec<crate::OsdpPdInfoHandle> = self
-            .channel_pds
-            .into_iter()
-            .map(|(channel, pd_info)| {
-                let channel: libosdp_sys::osdp_channel = channel.into();
-                pd_info
-                    .into_iter()
-                    .map(move |pd| pd.channel(channel).build().into())
-            })
-            .flatten()
-            .collect();
         unsafe { libosdp_sys::osdp_set_log_callback(Some(cp_log_handler)) };
         Ok(ControlPanel {
             ctx: cp_setup(info)?,
+            channels,
+            event_callback: None,
+            file_ops: BTreeMap::new(),
         })
     }
 }
 
 /// OSDP CP device context.
-#[derive(Debug)]
 pub struct ControlPanel {
     ctx: *mut core::ffi::c_void,
+    #[allow(dead_code)]
+    channels: Vec<OwnedChannel>,
+    event_callback: Option<OwnedCallback<CpEventCallback>>,
+    file_ops: BTreeMap<i32, OwnedFileOps>,
+}
+
+impl core::fmt::Debug for ControlPanel {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ControlPanel").field("ctx", &self.ctx).finish()
+    }
 }
 
 unsafe impl Send for ControlPanel {}
@@ -99,16 +114,17 @@ impl ControlPanel {
     /// Set a closure that gets called when a PD sends an event to this CP.
     pub fn set_event_callback<F>(&mut self, closure: F)
     where
-        F: FnMut(i32, OsdpEvent) -> i32,
+        F: FnMut(i32, OsdpEvent) -> i32 + 'static,
     {
+        let callback = OwnedCallback::<CpEventCallback>::new(Box::new(closure));
         unsafe {
-            let callback = get_cp_event_trampoline(&closure);
             libosdp_sys::osdp_cp_set_event_callback(
                 self.ctx,
-                Some(callback),
-                Box::into_raw(Box::new(closure)).cast(),
+                Some(cp_event_trampoline),
+                callback.data(),
             );
         }
+        self.event_callback = Some(callback);
     }
 
     /// Get the [`PdId`] from a PD identified by the offset number (in PdInfo
@@ -191,17 +207,13 @@ impl ControlPanel {
     /// Register a file operations handler for a PD. See [`crate::OsdpFileOps`]
     /// trait documentation for more details.
     pub fn register_file_ops(&mut self, pd: i32, fops: Box<dyn OsdpFileOps>) -> Result<()> {
-        let mut fops: libosdp_sys::osdp_file_ops = fops.into();
-        let rc = unsafe {
-            libosdp_sys::osdp_file_register_ops(
-                self.ctx,
-                pd,
-                &mut fops as *mut libosdp_sys::osdp_file_ops,
-            )
-        };
+        let fops = OwnedFileOps::new(fops);
+        let raw = fops.as_raw();
+        let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, pd, &raw) };
         if rc < 0 {
             Err(OsdpError::FileTransfer("ops register"))
         } else {
+            self.file_ops.insert(pd, fops);
             Ok(())
         }
     }

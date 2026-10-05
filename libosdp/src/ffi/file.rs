@@ -79,15 +79,34 @@ unsafe extern "C" fn file_close(data: *mut c_void) -> i32 {
     }
 }
 
-impl From<Box<dyn OsdpFileOps>> for libosdp_sys::osdp_file_ops {
-    fn from(value: Box<dyn OsdpFileOps>) -> Self {
-        let data = Box::into_raw(Box::new(value));
+/// File ops whose box is shared with LibOSDP; freed when this is dropped,
+/// which must happen only after LibOSDP stops using it.
+pub(crate) struct OwnedFileOps(*mut Box<dyn OsdpFileOps>);
+
+impl OwnedFileOps {
+    pub(crate) fn new(ops: Box<dyn OsdpFileOps>) -> Self {
+        Self(Box::into_raw(Box::new(ops)))
+    }
+
+    pub(crate) fn as_raw(&self) -> libosdp_sys::osdp_file_ops {
         libosdp_sys::osdp_file_ops {
-            arg: data as *mut _ as *mut c_void,
+            arg: self.0 as *mut c_void,
             open: Some(file_open),
             read: Some(file_read),
             write: Some(file_write),
             close: Some(file_close),
         }
+    }
+}
+
+impl Drop for OwnedFileOps {
+    fn drop(&mut self) {
+        drop(unsafe { Box::from_raw(self.0) });
+    }
+}
+
+impl core::fmt::Debug for OwnedFileOps {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("OwnedFileOps").finish()
     }
 }

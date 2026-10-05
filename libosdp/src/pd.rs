@@ -15,7 +15,12 @@
 use crate::{
     Channel, OsdpCommand, OsdpError, OsdpEvent, OsdpFileOps, PdCapability, PdInfo, PdInfoBuilder,
 };
-use crate::ffi::{callback::get_pd_command_trampoline, log::pd_log_handler};
+use crate::ffi::{
+    callback::{pd_command_trampoline, OwnedCallback, PdCommandCallback},
+    channel::OwnedChannel,
+    file::OwnedFileOps,
+    log::pd_log_handler,
+};
 use alloc::{boxed::Box, vec::Vec};
 use core::ffi::c_void;
 
@@ -32,9 +37,18 @@ fn pd_setup(info: PdInfo) -> Result<*mut c_void> {
 }
 
 /// OSDP Peripheral Device (PD) context
-#[derive(Debug)]
 pub struct PeripheralDevice {
     ctx: *mut libosdp_sys::osdp_t,
+    #[allow(dead_code)]
+    channel: OwnedChannel,
+    command_callback: Option<OwnedCallback<PdCommandCallback>>,
+    file_ops: Option<OwnedFileOps>,
+}
+
+impl core::fmt::Debug for PeripheralDevice {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PeripheralDevice").field("ctx", &self.ctx).finish()
+    }
 }
 
 unsafe impl Send for PeripheralDevice {}
@@ -43,9 +57,14 @@ impl PeripheralDevice {
     /// Create a new Peripheral panel object for the PD described by the corresponding PdInfo struct.
     pub fn new(info: PdInfoBuilder, channel: Box<dyn Channel>) -> Result<Self> {
         unsafe { libosdp_sys::osdp_set_log_callback(Some(pd_log_handler)) };
-        let info = info.channel(channel.into()).build();
+        let id = channel.get_id();
+        let channel = OwnedChannel::new(channel);
+        let info = info.channel(channel.as_raw(id)).build();
         Ok(Self {
             ctx: pd_setup(info)?,
+            channel,
+            command_callback: None,
+            file_ops: None,
         })
     }
 
@@ -86,16 +105,17 @@ impl PeripheralDevice {
     /// CP.
     pub fn set_command_callback<F>(&mut self, closure: F)
     where
-        F: FnMut(&mut OsdpCommand) -> i32,
+        F: FnMut(&mut OsdpCommand) -> i32 + 'static,
     {
+        let callback = OwnedCallback::<PdCommandCallback>::new(Box::new(closure));
         unsafe {
-            let callback = get_pd_command_trampoline(&closure);
             libosdp_sys::osdp_pd_set_command_callback(
                 self.ctx,
-                Some(callback),
-                Box::into_raw(Box::new(closure)).cast(),
+                Some(pd_command_trampoline),
+                callback.data(),
             )
         }
+        self.command_callback = Some(callback);
     }
 
     /// Check online status of a PD identified by the offset number (in PdInfo
@@ -137,17 +157,13 @@ impl PeripheralDevice {
     /// Register a file operations handler for PD. See [`crate::OsdpFileOps`]
     /// trait documentation for more details.
     pub fn register_file_ops(&mut self, fops: Box<dyn OsdpFileOps>) -> Result<()> {
-        let mut fops: libosdp_sys::osdp_file_ops = fops.into();
-        let rc = unsafe {
-            libosdp_sys::osdp_file_register_ops(
-                self.ctx,
-                0,
-                &mut fops as *mut libosdp_sys::osdp_file_ops,
-            )
-        };
+        let fops = OwnedFileOps::new(fops);
+        let raw = fops.as_raw();
+        let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, 0, &raw) };
         if rc < 0 {
             Err(OsdpError::FileTransfer("ops register"))
         } else {
+            self.file_ops = Some(fops);
             Ok(())
         }
     }

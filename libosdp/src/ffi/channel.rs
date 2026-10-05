@@ -46,13 +46,26 @@ unsafe extern "C" fn raw_close(data: *mut c_void) {
     let _ = channel.as_mut().close();
 }
 
-impl From<Box<dyn Channel>> for libosdp_sys::osdp_channel {
-    fn from(val: Box<dyn Channel>) -> Self {
-        let id = val.get_id();
-        let data = Box::into_raw(Box::new(val));
+/// A channel whose box is shared with LibOSDP; freed when this is dropped,
+/// which must happen only after the context is torn down.
+pub(crate) struct OwnedChannel(*mut Box<dyn Channel>);
+
+// The box holds a `dyn Channel`, and `Channel: Send`.
+unsafe impl Send for OwnedChannel {}
+
+impl OwnedChannel {
+    pub(crate) fn new(channel: Box<dyn Channel>) -> Self {
+        Self(Box::into_raw(Box::new(channel)))
+    }
+
+    pub(crate) fn data(&self) -> *mut c_void {
+        self.0 as *mut c_void
+    }
+
+    pub(crate) fn as_raw(&self, id: i32) -> libosdp_sys::osdp_channel {
         libosdp_sys::osdp_channel {
             id,
-            data: data as *mut c_void,
+            data: self.data(),
             recv: Some(raw_read),
             recv_pkt: None,
             send: Some(raw_write),
@@ -60,5 +73,17 @@ impl From<Box<dyn Channel>> for libosdp_sys::osdp_channel {
             release_pkt: None,
             close: Some(raw_close),
         }
+    }
+}
+
+impl Drop for OwnedChannel {
+    fn drop(&mut self) {
+        drop(unsafe { Box::from_raw(self.0) });
+    }
+}
+
+impl core::fmt::Debug for OwnedChannel {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("OwnedChannel").finish()
     }
 }

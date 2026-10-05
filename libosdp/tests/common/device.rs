@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2023-2024 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+// Copyright (c) 2023-2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -33,15 +33,10 @@ impl CpDevice {
             .address(101)?
             .baud_rate(115200)?
             .secure_channel_key(pd_0_key);
-        let mut cp = ControlPanelBuilder::new()
+        let cp = ControlPanelBuilder::new()
             .add_channel(bus, vec![pd_0])
             .build()?;
         let (event_tx, event_rx) = std::sync::mpsc::channel::<(i32, OsdpEvent)>();
-
-        cp.set_event_callback(|pd, event| {
-            event_tx.send((pd, event)).unwrap();
-            0
-        });
 
         let dev = Arc::new(Mutex::new(cp));
         let dev_clone = dev.clone();
@@ -50,7 +45,7 @@ impl CpDevice {
             .spawn(move || {
                 let dev = dev_clone;
                 let sender = event_tx;
-                dev.lock().unwrap().set_event_callback(|pd, event| {
+                dev.lock().unwrap().set_event_callback(move |pd, event| {
                     sender.send((pd, event)).expect("CP event send");
                     0
                 });
@@ -91,13 +86,8 @@ impl PdDevice {
             .capability(PdCapability::AudibleOutput(PdCapEntity::new(1, 1)))
             .capability(PdCapability::LedControl(PdCapEntity::new(1, 1)))
             .secure_channel_key(key);
-        let mut pd = PeripheralDevice::new(pd_info, bus)?;
+        let pd = PeripheralDevice::new(pd_info, bus)?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<OsdpCommand>();
-        pd.set_command_callback(|command| {
-            cmd_tx.send(command.clone()).unwrap();
-            0
-        });
-
         let dev = Arc::new(Mutex::new(pd));
         let dev_clone = dev.clone();
         let _ = thread::Builder::new()
@@ -105,7 +95,7 @@ impl PdDevice {
             .spawn(move || {
                 let dev = dev_clone;
                 let sender = cmd_tx;
-                dev.lock().unwrap().set_command_callback(|command| {
+                dev.lock().unwrap().set_command_callback(move |command| {
                     sender.send(command.clone()).expect("PD command send");
                     0
                 });
