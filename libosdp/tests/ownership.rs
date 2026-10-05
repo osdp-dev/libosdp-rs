@@ -8,9 +8,9 @@ mod common;
 
 use common::memory_channel::MemoryChannel;
 use libosdp::{
-    BuzzerCommand, CardRead, Channel, ChannelError, Command, CompletionError, ControlPanel,
-    ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps, FileTxCommand, KeyPress,
-    MfgCommand, MfgReply, Nak, PdCapEntity, PdCapability, PdIndex, PdInfoBuilder,
+    Buzzer, BuzzerCommand, CardRead, Channel, ChannelError, Command, CompletionError,
+    ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps, FileTxCommand,
+    KeyPress, MfgCommand, MfgReply, Nak, PdCapEntity, PdCapability, PdIndex, PdInfoBuilder,
     PeripheralDevice, Responder, StatusReport, StatusReportType, Submission,
 };
 use std::sync::{
@@ -212,10 +212,7 @@ fn cp_drop_with_commands_queued_frees_them_via_aborted() -> Result<()> {
     let (cp, target, pd) = secure_pair()?;
     let buzz = Command::Buzzer(BuzzerCommand {
         reader: 0,
-        control_code: 1,
-        on_count: 0,
-        off_count: 0,
-        rep_count: 0,
+        action: Buzzer::Off,
     });
     for _ in 0..8 {
         cp.submit(target, buzz.clone())?;
@@ -295,10 +292,7 @@ fn pd_handler_replaced_from_inside_itself_is_freed_after_it_returns() -> Result<
     PD.with(|cell| cell.set(pd).unwrap());
     let buzz = Command::Buzzer(BuzzerCommand {
         reader: 0,
-        control_code: 1,
-        on_count: 0,
-        off_count: 0,
-        rep_count: 0,
+        action: Buzzer::Off,
     });
     for _ in 0..2 {
         cp.submit(target, buzz.clone())?;
@@ -389,10 +383,7 @@ fn register_file_ops_from_open_during_submit_is_rejected() -> Result<()> {
 fn buzz() -> Command {
     Command::Buzzer(BuzzerCommand {
         reader: 0,
-        control_code: 1,
-        on_count: 0,
-        off_count: 0,
-        rep_count: 0,
+        action: Buzzer::Off,
     })
 }
 

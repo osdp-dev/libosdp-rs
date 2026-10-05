@@ -87,7 +87,9 @@ mod tests {
     use crate::{submit::Submission, Command, KeySetCommand};
 
     fn keyset() -> libosdp_sys::osdp_cmd {
-        Command::KeySet(KeySetCommand::new_scbk([0; 16])).into()
+        Command::KeySet(KeySetCommand::new_scbk([0; 16]))
+            .try_into()
+            .unwrap()
     }
 
     #[test]

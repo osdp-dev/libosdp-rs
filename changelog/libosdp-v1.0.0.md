@@ -45,16 +45,25 @@ Release subject ## TODO
   WouldBlock to have the packet retried on the next refresh. get_id
   is gone, and flush and close return nothing and default to doing
   nothing; flush discards buffered bytes
+- commands: Type the LED, buzzer, output and text control codes.
+  LedCommand takes LedTemporary::{Keep, Cancel, Set} and
+  LedPermanent::{Keep, Set}; BuzzerCommand a Buzzer::{Off, Tone};
+  OutputCommand an OutputAction; TextCommand a TextMode. Their
+  timings are Durations, and submit refuses one that is not a whole
+  number of LibOSDP's units or does not fit
 
 ## Enhancements
 
 - ## TODO
+- commands: Add LedColor::White, new in LibOSDP 4.0
 
 ## Fixes
 
 - ## TODO
 - file: Refuse a FileOps::offset_write that reports more bytes written
   than it was given, and hand it LibOSDP's buffer without copying it
+- commands: Refuse text longer than LibOSDP's buffer with
+  Error::TooLong instead of panicking
 
 ## Changes
 

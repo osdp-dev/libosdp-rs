@@ -9,8 +9,8 @@ type Result<T> = core::result::Result<T, libosdp::Error>;
 use std::{sync::MutexGuard, thread, time};
 
 use libosdp::{
-    Channel, ControlPanel, Command, BuzzerCommand, Event, CardRead,
-    PdIndex, PeripheralDevice,
+    Buzzer, BuzzerCommand, CardRead, Channel, Command, ControlPanel, Event, PdIndex,
+    PeripheralDevice,
 };
 
 use crate::common::{
@@ -62,10 +62,11 @@ fn test_commands() -> Result<()> {
 
     let data = BuzzerCommand {
         reader: 0,
-        control_code: 1,
-        on_count: 0,
-        off_count: 0,
-        rep_count: 0,
+        action: Buzzer::Tone {
+            on: time::Duration::from_millis(500),
+            off: time::Duration::from_millis(200),
+            repeat: 3,
+        },
     };
     let command = Command::Buzzer(data);
     send_command(cp.get_device(), cp.pd, command.clone())?;

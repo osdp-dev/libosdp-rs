@@ -190,11 +190,14 @@ impl ControlPanel {
     /// Refused with [`Error::Rejected`] from inside one of this context's
     /// callbacks, including application code that this method itself runs,
     /// such as [`FileOps::open`] when starting a file transfer.
+    ///
+    /// A command whose timings LibOSDP cannot express is refused with
+    /// [`Error::InvalidArgument`] before it is queued.
     pub fn submit(&self, pd: PdIndex, cmd: Command) -> Result<Submission<'_>> {
         let Some(_busy) = Busy::enter(&self.busy) else {
             return Err(Error::Rejected);
         };
-        let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_cmd::from(cmd));
+        let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_cmd::try_from(cmd)?);
         let rc = unsafe { libosdp_sys::osdp_cp_submit_command(self.ctx, pd.as_c(), raw) };
         if rc < 0 {
             unsafe { RawSubmission::reclaim(raw) };

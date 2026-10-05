@@ -4,8 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use libosdp::{
-    BuzzerCommand, Channel, ChannelError, Command, ControlPanelBuilder, Error, FileError,
-    PdInfoBuilder,
+    Buzzer, BuzzerCommand, Channel, ChannelError, Command, ControlPanelBuilder, Error,
+    FileError, PdInfoBuilder,
 };
 
 struct Idle;
@@ -92,10 +92,7 @@ fn submit_to_an_offline_pd_is_rejected() -> Result<(), Error> {
     let cp = builder.build()?;
     let buzz = Command::Buzzer(BuzzerCommand {
         reader: 0,
-        control_code: 1,
-        on_count: 0,
-        off_count: 0,
-        rep_count: 0,
+        action: Buzzer::Off,
     });
     assert!(matches!(cp.submit(pd, buzz), Err(Error::Rejected)));
     Ok(())
