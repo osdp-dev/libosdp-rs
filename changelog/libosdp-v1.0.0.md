@@ -97,6 +97,9 @@ Release subject ## TODO
   FileOps::finalize, which reports Finalize::Done with an MpOutcome, or
   Finalize::Pending while it verifies or installs the file. The default
   ends the transfer at once with MpOutcome::Ok, as before
+- events: Add Event::MfgStatus and Event::MfgError, LibOSDP 4.0's
+  manufacturer specific status and error replies. A PD may answer a
+  Command::Mfg with either; an error fails the command's Submission
 
 ## Fixes
 

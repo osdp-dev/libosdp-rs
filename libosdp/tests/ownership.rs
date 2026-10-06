@@ -10,7 +10,7 @@ use common::memory_channel::MemoryChannel;
 use libosdp::{
     Buzzer, BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
     CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
-    FileTxCommand, Finalize, Flag, KeyPress, MfgCommand, MfgReply, MpKind, MpOutcome, MpPhase, Nak,
+    FileTxCommand, Finalize, Flag, KeyPress, MfgCommand, MfgReply, MfgStatus, MpKind, MpOutcome, MpPhase, Nak,
     Notification, OpenMode, PdId, PdIndex, PdInfoBuilder,
     PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
 };
@@ -624,6 +624,34 @@ fn handler_answers_a_manufacturer_command_inline() -> Result<()> {
         received,
         Some((target, CpEvent::Event(Event::MfgReply(expected))))
     );
+    Ok(())
+}
+
+#[test]
+fn manufacturer_error_reply_fails_the_command_and_reaches_the_cp() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    pd.set_command_handler(|cmd, reply: &mut Responder<'_>| match cmd {
+        Command::Mfg(_) => reply
+            .reply(Event::MfgError(MfgStatus { data: vec![0xE1] }))
+            .map_err(|_| Nak::Record),
+        _ => Ok(()),
+    });
+    let mfg = MfgCommand {
+        vendor_code: (0x0A, 0x0B, 0x0C),
+        data: vec![1],
+    };
+    let submission = cp.submit(target, Command::Mfg(mfg))?;
+    assert_eq!(
+        refresh_until_done(&cp, &pd, &submission),
+        Err(CompletionError::Failed)
+    );
+    let mut received = None;
+    refresh_until(&cp, &pd, || {
+        received = cp.next_event();
+        received.is_some()
+    });
+    let expected = Event::MfgError(MfgStatus { data: vec![0xE1] });
+    assert_eq!(received, Some((target, CpEvent::Event(expected))));
     Ok(())
 }
 

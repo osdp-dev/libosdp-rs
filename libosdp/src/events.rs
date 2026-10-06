@@ -264,6 +264,47 @@ impl TryFrom<MfgReply> for libosdp_sys::osdp_event_mfgrep {
     }
 }
 
+/// A manufacturer specific status or error reply. Unlike [`MfgReply`], OSDP
+/// gives these no vendor code: the data is entirely vendor defined, to be
+/// read against the vendor code in the PD's [`PdId`](crate::PdId).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct MfgStatus {
+    /// Reply data, if any
+    pub data: Vec<u8>,
+}
+
+impl TryFrom<libosdp_sys::osdp_event_mfgstat> for MfgStatus {
+    type Error = Error;
+
+    fn try_from(value: libosdp_sys::osdp_event_mfgstat) -> Result<Self> {
+        let data = value
+            .data
+            .get(..value.length as usize)
+            .ok_or(Error::Malformed("manufacturer status length"))?;
+        Ok(MfgStatus {
+            data: data.to_vec(),
+        })
+    }
+}
+
+impl TryFrom<MfgStatus> for libosdp_sys::osdp_event_mfgstat {
+    type Error = Error;
+
+    fn try_from(value: MfgStatus) -> Result<Self> {
+        const MAX: usize = libosdp_sys::OSDP_EVENT_MFGSTAT_MAX_DATALEN as usize;
+        let mut data = [0; MAX];
+        data.get_mut(..value.data.len())
+            .ok_or(Error::TooLong { max: MAX })?
+            .copy_from_slice(&value.data);
+        Ok(libosdp_sys::osdp_event_mfgstat {
+            length: value.data.len() as u8,
+            data,
+        })
+    }
+}
+
 /// CP to intimate it about various events that originate there (such as key
 /// press, card reads, etc.,). They do this by creating an “event” and sending
 /// it to the CP. This module is responsible to handling such events though
@@ -280,6 +321,16 @@ pub enum Event {
 
     /// Event to transport a Manufacturer specific command’s response
     MfgReply(MfgReply),
+
+    /// A manufacturer specific status, reported on its own or in answer
+    /// to a [`Command::Mfg`](crate::Command::Mfg)
+    MfgStatus(MfgStatus),
+
+    /// A manufacturer specific error, reported on its own or in answer to
+    /// a [`Command::Mfg`](crate::Command::Mfg). In answer, it also fails
+    /// the command's [`Submission`](crate::Submission) with
+    /// [`CompletionError::Failed`](crate::CompletionError::Failed)
+    MfgError(MfgStatus),
 
     /// A PD's status, reported on a change or in answer to a
     /// [`Command::Status`](crate::Command::Status)
@@ -315,6 +366,22 @@ impl TryFrom<Event> for libosdp_sys::osdp_event {
                     mfgrep: e.try_into()?,
                 },
             },
+            Event::MfgStatus(e) => libosdp_sys::osdp_event {
+                _node: unsafe { core::mem::zeroed() },
+                type_: libosdp_sys::osdp_event_type_OSDP_EVENT_MFGSTATR,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 {
+                    mfgstatr: e.try_into()?,
+                },
+            },
+            Event::MfgError(e) => libosdp_sys::osdp_event {
+                _node: unsafe { core::mem::zeroed() },
+                type_: libosdp_sys::osdp_event_type_OSDP_EVENT_MFGERRR,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 {
+                    mfgerrr: e.try_into()?,
+                },
+            },
             Event::Status(e) => libosdp_sys::osdp_event {
                 _node: unsafe { core::mem::zeroed() },
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_STATUS,
@@ -346,6 +413,12 @@ impl TryFrom<libosdp_sys::osdp_event> for Event {
                 let data = unsafe { value.__bindgen_anon_1.status.try_into() }?;
                 Ok(Event::Status(data))
             }
+            libosdp_sys::osdp_event_type_OSDP_EVENT_MFGSTATR => Ok(Event::MfgStatus(
+                unsafe { value.__bindgen_anon_1.mfgstatr }.try_into()?,
+            )),
+            libosdp_sys::osdp_event_type_OSDP_EVENT_MFGERRR => Ok(Event::MfgError(
+                unsafe { value.__bindgen_anon_1.mfgerrr }.try_into()?,
+            )),
             _ => Err(Error::Malformed("event type")),
         }
     }
@@ -353,7 +426,7 @@ impl TryFrom<libosdp_sys::osdp_event> for Event {
 
 #[cfg(test)]
 mod tests {
-    use super::{CardRead, Event, KeyPress, MfgReply};
+    use super::{CardRead, Event, KeyPress, MfgReply, MfgStatus};
     use crate::Error;
     use libosdp_sys::{
         osdp_event_cardread, osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_UNSPECIFIED,
@@ -410,5 +483,26 @@ mod tests {
         ] {
             assert_eq!(Event::try_from(raw), Err(Error::Malformed(reason)));
         }
+    }
+
+    #[test]
+    fn manufacturer_status_and_error_round_trip() {
+        for event in [
+            Event::MfgStatus(MfgStatus { data: vec![1, 2] }),
+            Event::MfgError(MfgStatus { data: vec![] }),
+        ] {
+            let raw: libosdp_sys::osdp_event = event.clone().try_into().unwrap();
+            assert_eq!(Event::try_from(raw), Ok(event));
+        }
+        let oversized: Result<libosdp_sys::osdp_event, Error> =
+            Event::MfgError(MfgStatus { data: vec![0; 129] }).try_into();
+        assert!(matches!(oversized, Err(Error::TooLong { max: 128 })));
+        let mut raw: libosdp_sys::osdp_event =
+            Event::MfgStatus(MfgStatus::default()).try_into().unwrap();
+        raw.__bindgen_anon_1.mfgstatr.length = u8::MAX;
+        assert_eq!(
+            Event::try_from(raw),
+            Err(Error::Malformed("manufacturer status length"))
+        );
     }
 }

@@ -92,8 +92,9 @@ impl Responder<'_> {
     }
 
     /// Send `event` as the reply to the command being handled: a
-    /// [`Event::MfgReply`] to a [`Command::Mfg`], or a [`Event::Status`] of
-    /// the requested kind to a [`Command::Status`].
+    /// [`Event::MfgReply`], [`Event::MfgStatus`] or [`Event::MfgError`] to a
+    /// [`Command::Mfg`], or a [`Event::Status`] of the requested kind to a
+    /// [`Command::Status`].
     ///
     /// A status of another kind than the one queried is refused with
     /// [`Error::InvalidArgument`]. A status must carry one entry for every
