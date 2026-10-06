@@ -30,6 +30,18 @@ pub enum MpKind {
     BioRead,
 }
 
+impl MpKind {
+    pub(crate) fn as_c(self) -> libosdp_sys::osdp_mp_msg_type {
+        match self {
+            MpKind::FileTransfer => libosdp_sys::osdp_mp_msg_type_OSDP_MP_MSG_FILE_TRANSFER,
+            MpKind::Piv => libosdp_sys::osdp_mp_msg_type_OSDP_MP_MSG_PIV,
+            MpKind::GenAuth => libosdp_sys::osdp_mp_msg_type_OSDP_MP_MSG_GENAUTH,
+            MpKind::CrAuth => libosdp_sys::osdp_mp_msg_type_OSDP_MP_MSG_CRAUTH,
+            MpKind::BioRead => libosdp_sys::osdp_mp_msg_type_OSDP_MP_MSG_BIOREAD,
+        }
+    }
+}
+
 impl TryFrom<libosdp_sys::osdp_mp_msg_type> for MpKind {
     type Error = Error;
 

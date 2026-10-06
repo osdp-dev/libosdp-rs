@@ -8,8 +8,9 @@
 
 use crate::{
     busy::Busy, CapFunction, Capability, Channel, Command, Error, Event, FileOps, FileProgress,
-    Flag, Notification, PdId, PdInfoBuilder, Submission,
+    Flag, MpKind, Notification, PdId, PdInfoBuilder, Submission,
 };
+use crate::submit::Operation;
 use crate::ffi::{
     callback::{cp_event_trampoline, CpEventQueue, Shared},
     channel::OwnedChannel,
@@ -189,7 +190,8 @@ impl ControlPanel {
     /// [`Error::Rejected`] otherwise. An accepted command outlasts a link
     /// outage: it stays queued and is sent when the PD comes back, unless
     /// [`ControlPanel::flush`] drops it first. A [`Command::FileTx`] ends
-    /// when the transfer does, not when the PD acknowledges the command.
+    /// when the transfer does, not when the PD acknowledges the command,
+    /// and [`Submission::cancel`] stops the transfer early.
     ///
     /// Refused with [`Error::Rejected`] from inside one of this context's
     /// callbacks, including application code that this method itself runs,
@@ -201,13 +203,21 @@ impl ControlPanel {
         let Some(_busy) = Busy::enter(&self.busy) else {
             return Err(Error::Rejected);
         };
+        let operation = match cmd {
+            Command::FileTx(_) => Some(Operation {
+                ctx: self.ctx,
+                pd,
+                kind: MpKind::FileTransfer,
+            }),
+            _ => None,
+        };
         let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_cmd::try_from(cmd)?);
         let rc = unsafe { libosdp_sys::osdp_cp_submit_command(self.ctx, pd.as_c(), raw) };
         if rc < 0 {
             unsafe { RawSubmission::reclaim(raw) };
             return Err(Error::Rejected);
         }
-        Ok(Submission::new(slot))
+        Ok(Submission::new(slot, operation))
     }
 
     /// Drop the commands queued for `pd` that have not been sent yet; each

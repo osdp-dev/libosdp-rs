@@ -231,7 +231,7 @@ impl PeripheralDevice {
             unsafe { RawSubmission::reclaim(raw) };
             return Err(Error::Rejected);
         }
-        Ok(Submission::new(slot))
+        Ok(Submission::new(slot, None))
     }
 
     /// Take the oldest notification that LibOSDP raised during

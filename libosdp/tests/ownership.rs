@@ -10,8 +10,8 @@ use common::memory_channel::MemoryChannel;
 use libosdp::{
     Buzzer, BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
     CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
-    FileTxCommand, Flag, KeyPress, MfgCommand, MfgReply, Nak, Notification, OpenMode, PdId,
-    PdIndex, PdInfoBuilder,
+    FileTxCommand, Flag, KeyPress, MfgCommand, MfgReply, MpKind, MpOutcome, MpPhase, Nak,
+    Notification, OpenMode, PdId, PdIndex, PdInfoBuilder,
     PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
 };
 use std::sync::{
@@ -410,7 +410,7 @@ impl FileOps for RegistersFileOpsFromOpen {
         let nested_send = CP.with(|cp| {
             cp.get()
                 .unwrap()
-                .submit(self.target, Command::FileTx(FileTxCommand { id: 1, flags: 0 }))
+                .submit(self.target, Command::FileTx(FileTxCommand { id: 1 }))
                 .map(|_| ())
         });
         NESTED_SEND.with(|slot| *slot.borrow_mut() = Some(nested_send));
@@ -444,7 +444,7 @@ fn register_file_ops_from_open_during_submit_is_rejected() -> Result<()> {
     let sent = CP.with(|cp| {
         cp.get()
             .unwrap()
-            .submit(target, Command::FileTx(FileTxCommand { id: 1, flags: 0 }))
+            .submit(target, Command::FileTx(FileTxCommand { id: 1 }))
             .map(|_| ())
     });
     assert!(sent.is_err());
@@ -751,3 +751,61 @@ fn oversized_reply_is_refused_inside_the_handler() -> Result<()> {
     );
     Ok(())
 }
+
+struct MemFile(Vec<u8>);
+
+impl FileOps for MemFile {
+    fn open(&mut self, _: i32, _: OpenMode) -> core::result::Result<u32, FileError> {
+        Ok(self.0.len() as u32)
+    }
+    fn read(&mut self, buf: &mut [u8], offset: u32) -> core::result::Result<usize, FileError> {
+        let rest = self.0.get(offset as usize..).ok_or(FileError::Io)?;
+        let n = rest.len().min(buf.len());
+        buf[..n].copy_from_slice(&rest[..n]);
+        Ok(n)
+    }
+    fn write(&mut self, buf: &[u8], _: u32) -> core::result::Result<usize, FileError> {
+        Ok(buf.len())
+    }
+    fn close(&mut self) -> core::result::Result<(), FileError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn cancelled_file_transfer_fails_and_reports_aborted() -> Result<()> {
+    let (cp, target, pd) = notifying_pair()?;
+    refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
+    cp.register_file_ops(target, Box::new(MemFile(vec![0x5A; 16 * 1024])))?;
+    pd.register_file_ops(Box::new(MemFile(Vec::new())))?;
+    pd.set_command_handler(|_, _: &mut Responder<'_>| Ok(()));
+    let transfer = cp.submit(target, Command::FileTx(FileTxCommand { id: 1 }))?;
+    assert_eq!(transfer.cancel(), Ok(()));
+    assert_eq!(
+        refresh_until_done(&cp, &pd, &transfer),
+        Err(CompletionError::Failed)
+    );
+    assert_eq!(transfer.cancel(), Err(Error::NotInProgress));
+    let mut done = None;
+    while let Some((_, item)) = cp.next_event() {
+        if let CpEvent::Notification(Notification::Multipart(mp)) = item {
+            if let MpPhase::Done(outcome) = mp.phase {
+                done = Some((mp.kind, outcome));
+            }
+        }
+    }
+    assert_eq!(done, Some((MpKind::FileTransfer, MpOutcome::Aborted)));
+    Ok(())
+}
+
+#[test]
+fn only_a_multi_part_operation_can_be_cancelled() -> Result<()> {
+    let (cp, target, _pd) = secure_pair()?;
+    let submission = cp.submit(target, buzz())?;
+    assert!(matches!(
+        submission.cancel(),
+        Err(Error::InvalidArgument(_))
+    ));
+    Ok(())
+}
+

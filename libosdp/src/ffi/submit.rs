@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn completion_reports_to_a_live_handle() {
         let (raw, slot) = RawSubmission::into_raw(keyset());
-        let handle = Submission::new(slot);
+        let handle = Submission::new(slot, None);
         assert_eq!(handle.status(), None);
         unsafe {
             cp_command_complete(

@@ -76,6 +76,9 @@ Release subject ## TODO
   file ops are always opened to OpenMode::Read and a PD's to
   OpenMode::Write { size }, so a PD receiving an empty file is no longer
   told to read it
+- file: Cancel a file transfer with Submission::cancel on the submission
+  that started it. FileTxCommand::flags and OSDP_CMD_FILE_TX_FLAG_CANCEL
+  are gone: LibOSDP 4.0 no longer honours the flag
 
 ## Enhancements
 

@@ -771,28 +771,22 @@ impl TryFrom<MfgCommand> for libosdp_sys::osdp_cmd_mfg {
     }
 }
 
-/// File transfer command flag used to cancel ongoing transfers (not sent on OSDP channel).
-pub const OSDP_CMD_FILE_TX_FLAG_CANCEL: u32 = 1 << 31;
-
-/// Command to kick-off a file transfer to the PD.
+/// Command to kick-off a file transfer to the PD. The [`Submission`]
+/// returned for it ends when the transfer does, and
+/// [`Submission::cancel`] stops it early.
+///
+/// [`Submission`]: crate::Submission
+/// [`Submission::cancel`]: crate::Submission::cancel
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FileTxCommand {
     /// Pre-agreed file ID between CP and PD
     pub id: i32,
-    /// Reserved and set to zero by OSDP spec.
-    /// Note that the upper bits are used by libosdp internally (IOW, not sent
-    /// over the OSDP bus). Currently the following flags are defined:
-    /// - OSDP_CMD_FILE_TX_FLAG_CANCEL
-    pub flags: u32,
 }
 
 impl From<libosdp_sys::osdp_cmd_file_tx> for FileTxCommand {
     fn from(value: libosdp_sys::osdp_cmd_file_tx) -> Self {
-        FileTxCommand {
-            id: value.id,
-            flags: value.flags,
-        }
+        FileTxCommand { id: value.id }
     }
 }
 
@@ -800,7 +794,7 @@ impl From<FileTxCommand> for libosdp_sys::osdp_cmd_file_tx {
     fn from(value: FileTxCommand) -> Self {
         libosdp_sys::osdp_cmd_file_tx {
             id: value.id,
-            flags: value.flags,
+            flags: 0,
         }
     }
 }
