@@ -34,8 +34,9 @@ sha256 = "1.6.0"
 default = ["std"]
 defmt = ["embedded-io/defmt", "dep:defmt"]
 log = ["dep:log"]
-serde = ["dep:serde"]
+serde = ["dep:serde", "bitflags/serde"]
 std = ["thiserror", "serde?/std", "log", "log/std"]
+trs = ["libosdp-sys/trs"]
 
 [[example]]
 name = "cp"

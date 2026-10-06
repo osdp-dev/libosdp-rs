@@ -88,3 +88,5 @@ jobs:
           toolchain: stable
       - name: Cargo test
         run: cargo test
+      - name: Cargo test TRS
+        run: cargo test --package libosdp --features trs

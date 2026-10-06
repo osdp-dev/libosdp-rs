@@ -7,7 +7,9 @@
 //! are specified by OSDP specification. This module is responsible to handling
 //! such commands though [`Command`].
 
-use crate::{BioMatchCommand, BioReadCommand, Challenge, Error, MpKind, PivRequest, StatusKind};
+use crate::{
+    BioMatchCommand, BioReadCommand, Challenge, Error, MpKind, PivRequest, StatusKind, TrsCommand,
+};
 use alloc::vec::Vec;
 use core::time::Duration;
 
@@ -16,11 +18,15 @@ use super::ConvertEndian;
 type Result<T> = core::result::Result<T, Error>;
 
 const TENTH_OF_A_SECOND: Duration = Duration::from_millis(100);
-const SECOND: Duration = Duration::from_secs(1);
+pub(crate) const SECOND: Duration = Duration::from_secs(1);
 
 /// `duration` as a count of `unit`, refused unless it is a whole number of
 /// them that fits `T`.
-fn to_count<T: TryFrom<u64>>(duration: Duration, unit: Duration, what: &'static str) -> Result<T> {
+pub(crate) fn to_count<T: TryFrom<u64>>(
+    duration: Duration,
+    unit: Duration,
+    what: &'static str,
+) -> Result<T> {
     let nanos = |d: Duration| {
         d.as_secs()
             .checked_mul(1_000_000_000)
@@ -34,7 +40,7 @@ fn to_count<T: TryFrom<u64>>(duration: Duration, unit: Duration, what: &'static 
     T::try_from(nanos / unit).map_err(|_| Error::InvalidArgument(what))
 }
 
-fn from_count(count: impl Into<u32>, unit: Duration) -> Duration {
+pub(crate) fn from_count(count: impl Into<u32>, unit: Duration) -> Duration {
     unit * count.into()
 }
 
@@ -915,6 +921,10 @@ pub enum Command {
     /// Have the smart card in the PD's reader answer a challenge; see
     /// [`ControlPanel::challenge_auth`](crate::ControlPanel::challenge_auth)
     CrAuth(Challenge),
+
+    /// Talk to the smart card in the PD's reader through a card session;
+    /// needs the `trs` feature
+    Trs(TrsCommand),
 }
 
 impl Command {
@@ -1050,6 +1060,12 @@ impl TryFrom<Command> for libosdp_sys::osdp_cmd {
                     auth: c.try_into()?,
                 },
             },
+            Command::Trs(c) => libosdp_sys::osdp_cmd {
+                _node: unsafe { core::mem::zeroed() },
+                id: libosdp_sys::osdp_cmd_e_OSDP_CMD_XWR,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_cmd__bindgen_ty_1 { trs: c.try_into()? },
+            },
         })
     }
 }
@@ -1106,6 +1122,9 @@ impl TryFrom<libosdp_sys::osdp_cmd> for Command {
             )),
             libosdp_sys::osdp_cmd_e_OSDP_CMD_CRAUTH => Ok(Command::CrAuth(
                 unsafe { value.__bindgen_anon_1.auth }.try_into()?,
+            )),
+            libosdp_sys::osdp_cmd_e_OSDP_CMD_XWR => Ok(Command::Trs(
+                unsafe { value.__bindgen_anon_1.trs }.try_into()?,
             )),
             _ => Err(Error::Malformed("command id")),
         }

@@ -67,7 +67,9 @@ pub enum CompletionError {
     #[cfg_attr(feature = "std", error("failed"))]
     Failed,
 
-    /// A flush dropped it before it was sent.
+    /// A flush dropped it before it was sent, or, for a transparent reader
+    /// command, the card session it belonged to ended before it was sent:
+    /// LibOSDP then drops the rest of the session's commands.
     #[cfg_attr(feature = "std", error("flushed before it was sent"))]
     Flushed,
 

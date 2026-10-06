@@ -8,13 +8,13 @@ mod common;
 
 use common::memory_channel::MemoryChannel;
 use libosdp::{
-    Challenge, Multipart, PivReply, PivRequest, BioFormat, BioMatchCommand, BioReadCommand,
-    BioReadReply, BioStatus, BioType, Buzzer, BuzzerCommand, CapFunction, Capability, CardRead,
-    Channel, ChannelError, Command, CompletionError, ControlPanel, ControlPanelBuilder, CpEvent,
-    Error, Event, FileError, FileOps, FileTxCommand, Finalize, Flag, KeyPress, Metrics, MfgCommand,
-    MfgReply, MfgStatus, MpKind, MpOutcome, MpPhase, Nak, Notification, OpenMode, PdId, PdIndex,
-    PdInfoBuilder, PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
-    TimeDateCommand,
+    BioFormat, BioMatchCommand, BioReadCommand, BioReadReply, BioStatus, BioType, Buzzer,
+    BuzzerCommand, CapFunction, Capability, CardRead, Challenge, Channel, ChannelError, Command,
+    CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
+    FileTxCommand, Finalize, Flag, KeyPress, Metrics, MfgCommand, MfgReply, MfgStatus, MpKind,
+    MpOutcome, MpPhase, Multipart, Nak, Notification, OpenMode, PdId, PdIndex, PdInfoBuilder,
+    PeripheralDevice, PivReply, PivRequest, ReaderStatus, Responder, Status, StatusKind,
+    Submission, TimeDateCommand, TrsCommand,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -1166,5 +1166,54 @@ fn refresh_until_done_with(
         pd.refresh();
         std::thread::sleep(Duration::from_millis(5));
     }
+}
+
+#[cfg(not(feature = "trs"))]
+#[test]
+fn transparent_reader_commands_need_the_trs_feature() -> Result<()> {
+    let (cp, target, _pd) = smart_card_pair()?;
+    assert!(matches!(
+        cp.submit(target, Command::Trs(TrsCommand::Start)),
+        Err(Error::Rejected)
+    ));
+    Ok(())
+}
+
+#[cfg(feature = "trs")]
+#[test]
+fn card_session_carries_apdus_to_the_card() -> Result<()> {
+    use libosdp::{CardData, TrsReply, TrsSessionStatus};
+
+    let (cp, target, pd) = smart_card_pair()?;
+    let r_apdu = TrsReply::CardData(CardData {
+        reader: 0,
+        status: 0,
+        apdu: vec![0x90, 0x00],
+    });
+    let answer = r_apdu.clone();
+    pd.set_command_handler(move |cmd, reply: &mut Responder<'_>| match cmd {
+        Command::Trs(TrsCommand::Apdu(_)) => reply
+            .reply(Event::Trs(answer.clone()))
+            .map_err(|_| Nak::Record),
+        _ => Ok(()),
+    });
+    let start = cp.submit(target, Command::Trs(TrsCommand::Start))?;
+    let select = TrsCommand::Apdu(vec![0x00, 0xA4, 0x04, 0x00]);
+    let apdu = cp.submit(target, Command::Trs(select))?;
+    assert!(matches!(cp.submit(target, buzz()), Err(Error::Rejected)));
+    let stop = cp.submit(target, Command::Trs(TrsCommand::Stop))?;
+    let closed = CpEvent::Notification(Notification::TrsStatus(TrsSessionStatus::Closed));
+    let mut events = Vec::new();
+    refresh_until(&cp, &pd, || {
+        events.extend(drain_events(&cp));
+        events.contains(&closed)
+    });
+    for submission in [&start, &apdu, &stop] {
+        assert_eq!(submission.status(), Some(Ok(())));
+    }
+    assert!(events.contains(&CpEvent::Event(Event::Trs(r_apdu))));
+    let opened = CpEvent::Notification(Notification::TrsStatus(TrsSessionStatus::Opened));
+    assert!(events.contains(&opened));
+    Ok(())
 }
 

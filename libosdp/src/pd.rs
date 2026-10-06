@@ -94,8 +94,8 @@ impl Responder<'_> {
     /// [`Event::MfgReply`], [`Event::MfgStatus`] or [`Event::MfgError`] to a
     /// [`Command::Mfg`], an [`Event::BioRead`], [`Event::BioMatch`],
     /// [`Event::PivData`], [`Event::GenAuth`] or [`Event::CrAuth`] to the
-    /// matching command, or a [`Event::Status`] of the requested kind to a
-    /// [`Command::Status`].
+    /// matching command, an [`Event::Trs`] to a [`Command::Trs`], or a
+    /// [`Event::Status`] of the requested kind to a [`Command::Status`].
     ///
     /// A status of another kind than the one queried is refused with
     /// [`Error::InvalidArgument`]. A status must carry one entry for every

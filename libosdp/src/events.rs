@@ -8,7 +8,7 @@
 //! etc.,). They do this by creating an "event" and sending it to the CP. This
 //! module is responsible to handling such events though [`Event`].
 
-use crate::{BioMatchReply, BioReadReply, Error, PivReply, Status};
+use crate::{BioMatchReply, BioReadReply, Error, PivReply, Status, TrsReply};
 use alloc::vec::Vec;
 
 use super::ConvertEndian;
@@ -351,6 +351,10 @@ pub enum Event {
     /// A smart card's answer to a [`Command::CrAuth`](crate::Command::CrAuth)
     CrAuth(PivReply),
 
+    /// A transparent reader reply: a card in the field, or a card's answer
+    /// to a [`Command::Trs`](crate::Command::Trs)
+    Trs(TrsReply),
+
     /// A PD's status, reported on a change or in answer to a
     /// [`Command::Status`](crate::Command::Status)
     Status(Status),
@@ -441,6 +445,12 @@ impl TryFrom<Event> for libosdp_sys::osdp_event {
                     piv_reply: e.try_into()?,
                 },
             },
+            Event::Trs(e) => libosdp_sys::osdp_event {
+                _node: unsafe { core::mem::zeroed() },
+                type_: libosdp_sys::osdp_event_type_OSDP_EVENT_TRS,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 { trs: e.try_into()? },
+            },
             Event::Status(e) => libosdp_sys::osdp_event {
                 _node: unsafe { core::mem::zeroed() },
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_STATUS,
@@ -492,6 +502,9 @@ impl TryFrom<libosdp_sys::osdp_event> for Event {
             )),
             libosdp_sys::osdp_event_type_OSDP_EVENT_CRAUTHR => Ok(Event::CrAuth(
                 unsafe { value.__bindgen_anon_1.piv_reply }.try_into()?,
+            )),
+            libosdp_sys::osdp_event_type_OSDP_EVENT_TRS => Ok(Event::Trs(
+                unsafe { value.__bindgen_anon_1.trs }.try_into()?,
             )),
             _ => Err(Error::Malformed("event type")),
         }

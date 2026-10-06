@@ -125,6 +125,12 @@ Release subject ## TODO
   challenge_auth. Each returns a Submission<'_, PivReply> whose status()
   resolves into the card's reply; Submission::cancel stops it. A PD
   answers Command::PivData, GenAuth and CrAuth with the matching Event
+- trs: Talk to the smart card in a PD's reader through transparent
+  reader card sessions: Command::Trs carries a TrsCommand (Start, Stop,
+  Apdu, EnterPin, CardScan) and Event::Trs a TrsReply (CardInfo,
+  CardPresent, CardData, PinComplete, Error). LibOSDP builds this only
+  with the new trs feature, which turns on libosdp-sys's; without it,
+  these commands are refused with Error::Rejected
 
 ## Fixes
 

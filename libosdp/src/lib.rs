@@ -53,6 +53,20 @@
 //!
 //! You can find a template implementation for CP app [here][3] and PD app [here][4].
 //!
+//! ## Cargo features
+//!
+//!   - `std` (default): build against the standard library, implement
+//!     `std::error::Error` for the error types, and turn on `log`. Without
+//!     it the crate is `no_std` and needs only `alloc`.
+//!   - `log`: forward LibOSDP's log messages to the `log` crate.
+//!   - `defmt`: forward LibOSDP's log messages to `defmt` instead, and
+//!     derive `defmt::Format` for most public types.
+//!   - `serde`: derive `Serialize` and `Deserialize` for the public data
+//!     types.
+//!   - `trs`: build LibOSDP's transparent reader support, which
+//!     [`Command::Trs`] and [`Event::Trs`] need. Without it, LibOSDP refuses
+//!     those commands with [`Error::Rejected`].
+//!
 //! [1]: https://doc.osdp.dev/protocol/
 //! [2]: https://www.securityindustry.org/industry-standards/open-supervised-device-protocol/
 //! [3]: https://docs.rs/crate/libosdp/latest/source/examples/cp.rs
@@ -85,6 +99,7 @@ mod piv;
 mod queue;
 mod status;
 mod submit;
+mod trs;
 
 // Re-export for convenience
 pub use channel::*;
@@ -106,6 +121,10 @@ pub use pd::{CommandHandler, PeripheralDevice, Responder};
 pub use piv::{Challenge, PivReply, PivRequest};
 pub use status::{ReaderStatus, Status, StatusKind};
 pub use submit::Submission;
+pub use trs::{
+    CardData, CardInfo, CardProtocol, CardStatus, PinBlock, PinEndOn, PinEntry, PinFormat,
+    PinLengthField, PinResult, TrsCommand, TrsReply,
+};
 
 /// Packs bytes into the little-endian `u32` LibOSDP expects.
 pub(crate) trait ConvertEndian {
