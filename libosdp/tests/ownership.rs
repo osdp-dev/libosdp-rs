@@ -1028,3 +1028,33 @@ fn pd_that_keeps_time_receives_the_date_and_time() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn disabled_pd_goes_offline_until_enabled() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    assert!(cp.is_enabled(target));
+    assert_eq!(cp.enable(target), Err(Error::Rejected));
+    cp.disable(target)?;
+    assert_eq!(cp.disable(target), Err(Error::Rejected));
+    refresh_until(&cp, &pd, || !cp.is_enabled(target));
+    assert!(!cp.is_online(target));
+    assert!(matches!(cp.submit(target, buzz()), Err(Error::Rejected)));
+    cp.enable(target)?;
+    refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
+    assert!(cp.is_enabled(target));
+    Ok(())
+}
+
+#[test]
+fn disabling_fails_the_command_in_flight_and_keeps_the_queue() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    let in_flight = cp.submit(target, buzz())?;
+    let queued = cp.submit(target, buzz())?;
+    cp.disable(target)?;
+    refresh_until(&cp, &pd, || !cp.is_enabled(target));
+    assert_eq!(in_flight.status(), Some(Err(CompletionError::Failed)));
+    assert_eq!(queued.status(), None);
+    assert_eq!(cp.flush(target), 1);
+    assert_eq!(queued.status(), Some(Err(CompletionError::Flushed)));
+    Ok(())
+}
+

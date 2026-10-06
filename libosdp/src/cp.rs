@@ -303,6 +303,45 @@ impl ControlPanel {
         }
     }
 
+    /// Stop talking to `pd`: on the next refresh, LibOSDP brings it to a
+    /// safe state and stops polling it, so it goes offline and refuses
+    /// commands until [`enable`](Self::enable)d again. A
+    /// [`submit`](Self::submit) before that refresh is still accepted.
+    /// The command in flight then fails with
+    /// [`CompletionError::Failed`](crate::CompletionError), and a file
+    /// transfer is aborted; commands queued behind it stay pending
+    /// until the PD is enabled and they are sent, or
+    /// [`flush`](Self::flush) drops them. Refused with
+    /// [`Error::Rejected`] when `pd` is disabled already.
+    pub fn disable(&self, pd: PdIndex) -> Result<()> {
+        let rc = unsafe { libosdp_sys::osdp_cp_disable_pd(self.ctx, pd.as_c()) };
+        if rc < 0 {
+            Err(Error::Rejected)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Start talking to a [`disable`](Self::disable)d `pd` again, from
+    /// scratch as at setup, on the next refresh; commands left queued
+    /// are then sent. Refused with [`Error::Rejected`] when `pd` is not
+    /// disabled.
+    pub fn enable(&self, pd: PdIndex) -> Result<()> {
+        let rc = unsafe { libosdp_sys::osdp_cp_enable_pd(self.ctx, pd.as_c()) };
+        if rc < 0 {
+            Err(Error::Rejected)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Check whether `pd` is enabled; a PD is disabled from the refresh
+    /// after [`disable`](Self::disable) until the one after
+    /// [`enable`](Self::enable).
+    pub fn is_enabled(&self, pd: PdIndex) -> bool {
+        unsafe { libosdp_sys::osdp_cp_is_pd_enabled(self.ctx, pd.as_c()) }
+    }
+
     /// Check whether `pd` is online.
     pub fn is_online(&self, pd: PdIndex) -> bool {
         let mut buf: [u8; 16] = [0; 16];
