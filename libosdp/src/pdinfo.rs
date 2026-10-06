@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{Error, Flag, PdCapability, PdId};
+use crate::{Capability, Error, Flag, PdId};
 use alloc::{boxed::Box, ffi::CString, string::String, vec::Vec};
 use core::ops::Deref;
 
@@ -92,23 +92,25 @@ impl PdInfo {
         self.id
     }
 
-    /// Get a PDs [`PdCapability`]s
+    /// Get a PDs [`Capability`]s
     ///
     /// # Example
     /// ```
-    /// # use libosdp::{PdCapability, PdInfoBuilder, PdCapEntity};
+    /// # use libosdp::{CapFunction, Capability, PdInfoBuilder};
+    /// let security = Capability::new(CapFunction::CommunicationSecurity, 1, 1);
+    /// let buzzer = Capability::new(CapFunction::AudibleOutput, 1, 1);
     /// let pd = PdInfoBuilder::new()
-    ///             .capability(PdCapability::CommunicationSecurity(PdCapEntity::new(1, 1)))
-    ///             .capability(PdCapability::AudibleOutput(PdCapEntity::new(1, 1)))
+    ///             .capability(security)
+    ///             .capability(buzzer)
     ///             .build();
-    /// assert_eq!(
-    ///   pd.capabilities(),
-    ///   vec![PdCapability::CommunicationSecurity(PdCapEntity::new(1, 1)), PdCapability::AudibleOutput(PdCapEntity::new(1, 1))]
-    /// );
+    /// assert_eq!(pd.capabilities(), vec![security, buzzer]);
     /// ```
     #[must_use]
-    pub fn capabilities(&self) -> Vec<PdCapability> {
-        self.cap.iter().cloned().map(PdCapability::from).collect()
+    pub fn capabilities(&self) -> Vec<Capability> {
+        self.cap
+            .iter()
+            .filter_map(|&cap| Capability::try_from(cap).ok())
+            .collect()
     }
 
     /// Get a PDs secure channel key.
@@ -199,7 +201,7 @@ impl PdInfoBuilder {
     }
 
     /// Set a PD capability
-    pub fn capability(mut self, cap: PdCapability) -> PdInfoBuilder {
+    pub fn capability(mut self, cap: Capability) -> PdInfoBuilder {
         self.cap.push(cap.into());
         self
     }
@@ -207,10 +209,10 @@ impl PdInfoBuilder {
     /// Set multiple capabilities at once
     pub fn capabilities<'a, I>(mut self, caps: I) -> PdInfoBuilder
     where
-        I: IntoIterator<Item = &'a PdCapability>,
+        I: IntoIterator<Item = &'a Capability>,
     {
-        for cap in caps {
-            self.cap.push(cap.clone().into());
+        for &cap in caps {
+            self.cap.push(cap.into());
         }
         self
     }

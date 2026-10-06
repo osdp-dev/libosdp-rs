@@ -61,6 +61,12 @@ Release subject ## TODO
   per entity, as LibOSDP 4.0 reports them. Command::Status takes the
   StatusKind to query, and the serde feature no longer pulls in
   serde_arrays
+- pdcap: Replace PdCapability and PdCapEntity with Capability {
+  function, compliance, items }, whose function is a CapFunction.
+  PdInfoBuilder, PeripheralDevice::set_capabilities and
+  ControlPanel::get_capability take it, get_capability by the
+  CapFunction to read. The string parsers for capabilities, which only
+  osdpctl used, are gone
 
 ## Enhancements
 

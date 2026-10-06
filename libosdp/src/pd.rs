@@ -13,7 +13,7 @@
 //! to the CP.
 
 use crate::{
-    busy::Busy, Channel, Command, Error, Event, FileOps, Nak, PdCapability, PdInfoBuilder,
+    busy::Busy, Capability, Channel, Command, Error, Event, FileOps, Nak, PdInfoBuilder,
     Submission,
 };
 use crate::ffi::{
@@ -200,9 +200,9 @@ impl PeripheralDevice {
         unsafe { libosdp_sys::osdp_pd_refresh(self.ctx) }
     }
 
-    /// Set a vector of [`PdCapability`] for this PD.
-    pub fn set_capabilities(&self, cap: &[PdCapability]) {
-        let cap = terminated_capabilities(cap.iter().map(|c| c.clone().into()));
+    /// Set a vector of [`Capability`] for this PD.
+    pub fn set_capabilities(&self, cap: &[Capability]) {
+        let cap = terminated_capabilities(cap.iter().map(|&c| c.into()));
         unsafe { libosdp_sys::osdp_pd_set_capabilities(self.ctx, cap.as_ptr()) }
     }
 

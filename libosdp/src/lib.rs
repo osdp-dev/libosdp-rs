@@ -87,7 +87,7 @@ pub use channel::*;
 pub use commands::*;
 pub use events::*;
 pub use file::*;
-pub use pdcap::*;
+pub use pdcap::{CapFunction, Capability};
 pub use pdid::*;
 pub use pdinfo::*;
 

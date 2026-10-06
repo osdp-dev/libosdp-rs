@@ -7,7 +7,7 @@
 //! (PD) on the OSDP bus. It can send commands to and receive events from PDs.
 
 use crate::{
-    busy::Busy, file::FileOps, Channel, Command, Error, Event, Flag, PdCapability, PdId,
+    busy::Busy, file::FileOps, CapFunction, Capability, Channel, Command, Error, Event, Flag, PdId,
     PdInfoBuilder, Submission,
 };
 use crate::ffi::{
@@ -240,9 +240,9 @@ impl ControlPanel {
         }
     }
 
-    /// Get the [`PdCapability`] that `pd` reported for `cap`'s function.
-    pub fn get_capability(&self, pd: PdIndex, cap: PdCapability) -> Result<PdCapability> {
-        let mut cap = cap.into();
+    /// Get the [`Capability`] that `pd` reported for `function`.
+    pub fn get_capability(&self, pd: PdIndex, function: CapFunction) -> Result<Capability> {
+        let mut cap = Capability::new(function, 0, 0).into();
         let rc = unsafe { libosdp_sys::osdp_cp_get_capability(self.ctx, pd.as_c(), &mut cap) };
         if rc < 0 {
             Err(Error::Rejected)

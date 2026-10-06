@@ -10,7 +10,7 @@ use common::memory_channel::MemoryChannel;
 use libosdp::{
     Buzzer, BuzzerCommand, CardRead, Channel, ChannelError, Command, CompletionError,
     ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps, FileTxCommand,
-    KeyPress, MfgCommand, MfgReply, Nak, PdCapEntity, PdCapability, PdIndex, PdInfoBuilder,
+    KeyPress, MfgCommand, MfgReply, Nak, CapFunction, Capability, PdIndex, PdInfoBuilder,
     PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
 };
 use std::sync::{
@@ -187,9 +187,9 @@ fn secure_pair_with_event_queue(
     let (cp_bus, pd_bus) = MemoryChannel::new();
     let pd = PeripheralDevice::new(
         pd_info()?
-            .capability(PdCapability::CommunicationSecurity(PdCapEntity::new(1, 1)))
-            .capability(PdCapability::AudibleOutput(PdCapEntity::new(1, 1)))
-            .capability(PdCapability::LedControl(PdCapEntity::new(1, 1)))
+            .capability(Capability::new(CapFunction::CommunicationSecurity, 1, 1))
+            .capability(Capability::new(CapFunction::AudibleOutput, 1, 1))
+            .capability(Capability::new(CapFunction::LedControl, 1, 1))
             .secure_channel_key(KEY),
         Box::new(pd_bus),
     )?;
@@ -225,8 +225,8 @@ fn cp_drop_with_commands_queued_frees_them_via_aborted() -> Result<()> {
 #[test]
 fn pd_capabilities_survive_setup() -> Result<()> {
     let (cp, target, _pd) = secure_pair()?;
-    let cap = cp.get_capability(target, PdCapability::LedControl(PdCapEntity::new(0, 0)))?;
-    assert_eq!(cap, PdCapability::LedControl(PdCapEntity::new(1, 1)));
+    let cap = cp.get_capability(target, CapFunction::LedControl)?;
+    assert_eq!(cap, Capability::new(CapFunction::LedControl, 1, 1));
     Ok(())
 }
 
@@ -234,7 +234,7 @@ fn pd_capabilities_survive_setup() -> Result<()> {
 fn capabilities_set_after_setup_reach_the_cp() -> Result<()> {
     let (cp_bus, pd_bus) = MemoryChannel::new();
     let pd = PeripheralDevice::new(pd_info()?, Box::new(pd_bus))?;
-    pd.set_capabilities(&[PdCapability::LedControl(PdCapEntity::new(1, 4))]);
+    pd.set_capabilities(&[Capability::new(CapFunction::LedControl, 1, 4)]);
     let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
     let target = builder.add_pd(pd_info()?)?;
     let cp = builder.build()?;
@@ -245,8 +245,8 @@ fn capabilities_set_after_setup_reach_the_cp() -> Result<()> {
         pd.refresh();
         std::thread::sleep(Duration::from_millis(5));
     }
-    let cap = cp.get_capability(target, PdCapability::LedControl(PdCapEntity::new(0, 0)))?;
-    assert_eq!(cap, PdCapability::LedControl(PdCapEntity::new(1, 4)));
+    let cap = cp.get_capability(target, CapFunction::LedControl)?;
+    assert_eq!(cap, Capability::new(CapFunction::LedControl, 1, 4));
     Ok(())
 }
 

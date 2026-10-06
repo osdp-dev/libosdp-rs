@@ -9,7 +9,7 @@ use std::{
 };
 
 use libosdp::{
-    ControlPanel, ControlPanelBuilder, Command, CpEvent, Event, PdCapEntity, PdCapability,
+    CapFunction, Capability, ControlPanel, ControlPanelBuilder, Command, CpEvent, Event,
     PdIndex, PdInfoBuilder, PeripheralDevice, Responder,
 };
 type Result<T> = core::result::Result<T, libosdp::Error>;
@@ -86,9 +86,9 @@ impl PdDevice {
             .name("PD 101")?
             .address(101)?
             .baud_rate(115200)?
-            .capability(PdCapability::CommunicationSecurity(PdCapEntity::new(1, 1)))
-            .capability(PdCapability::AudibleOutput(PdCapEntity::new(1, 1)))
-            .capability(PdCapability::LedControl(PdCapEntity::new(1, 1)))
+            .capability(Capability::new(CapFunction::CommunicationSecurity, 1, 1))
+            .capability(Capability::new(CapFunction::AudibleOutput, 1, 1))
+            .capability(Capability::new(CapFunction::LedControl, 1, 1))
             .secure_channel_key(key);
         let pd = PeripheralDevice::new(pd_info, bus)?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Command>();

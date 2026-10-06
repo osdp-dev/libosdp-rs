@@ -3,77 +3,16 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use core::str::FromStr;
+//! PDs advertise what they can do to the CP by means of capabilities, one
+//! per function.
 
 use crate::Error;
 
-/// PD capability entity to be used inside [`PdCapability`]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct PdCapEntity {
-    compliance: u8,
-    num_items: u8,
-}
-
-impl PdCapEntity {
-    /// Create a new capability entity to be used inside [`PdCapability`].
-    ///
-    /// # Arguments
-    ///
-    /// * `compliance` - A number that indicates what the PD can do with this
-    ///   capability. This number means different things for different
-    ///   [`PdCapability`].
-    /// * `num_items` - number of units of such capability in the PD. For
-    ///    LED capability ([`PdCapability::LedControl`]), this would indicate
-    ///    the number of controllable LEDs available on this PD.
-    pub fn new(compliance: u8, num_items: u8) -> Self {
-        Self {
-            compliance,
-            num_items,
-        }
-    }
-}
-
-// From "Compliance:10,NumItems:20" to PdCapEntry { compliance: 10, num_items: 20 }
-impl FromStr for PdCapEntity {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (compliance, num_items);
-        if let Some((compliance_str, num_items_str)) = s.split_once(',') {
-            if let Some((key, val)) = compliance_str.split_once(':') {
-                if key != "Compliance" {
-                    return Err(Error::InvalidArgument("PdCapEntity"));
-                }
-                compliance = val
-                    .parse::<u8>()
-                    .map_err(|_| Error::InvalidArgument("PdCapEntity"))?
-            } else {
-                return Err(Error::InvalidArgument("PdCapEntity"));
-            }
-            if let Some((key, val)) = num_items_str.split_once(':') {
-                if key != "NumItems" {
-                    return Err(Error::InvalidArgument("PdCapEntity"));
-                }
-                num_items = val
-                    .parse::<u8>()
-                    .map_err(|_| Error::InvalidArgument("PdCapEntity"))?
-            } else {
-                return Err(Error::InvalidArgument("PdCapEntity"));
-            }
-            Ok(Self {
-                compliance,
-                num_items,
-            })
-        } else {
-            Err(Error::InvalidArgument("PdCapEntity"))
-        }
-    }
-}
-
-/// OSDP defined PD capabilities. PDs expose/advertise features they support to
-/// the CP by means of "capabilities".
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum PdCapability {
+/// A PD function that OSDP defines a capability for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum CapFunction {
     /// This function indicates the ability to monitor the status of a switch
     /// using a two-wire electrical connection between the PD and the switch.
     /// The on/off position of the switch indicates the state of an external
@@ -83,348 +22,232 @@ pub enum PdCapability {
     /// status, or it may implement supervision of the monitoring circuit.
     /// A supervised circuit is able to indicate circuit fault status in
     /// addition to open/closed status.
-    ContactStatusMonitoring(PdCapEntity),
+    ContactStatusMonitoring,
 
     /// This function provides a switched output, typically in the form of a
     /// relay. The Output has two states: active or inactive. The Control Panel
     /// (CP) can directly set the Output's state, or, if the PD supports timed
     /// operations, the CP can specify a time period for the activation of the
     /// Output.
-    OutputControl(PdCapEntity),
+    OutputControl,
 
     /// This capability indicates the form of the card data is presented to the
     /// Control Panel.
-    CardDataFormat(PdCapEntity),
+    CardDataFormat,
 
     /// This capability indicates the presence of and type of LEDs.
-    LedControl(PdCapEntity),
+    LedControl,
 
     /// This capability indicates the presence of and type of an audible
     /// annunciator (buzzer or similar tone generator).
-    AudibleOutput(PdCapEntity),
+    AudibleOutput,
 
     /// This capability indicates that the PD supports a text display emulating
     /// character-based display terminals.
-    TextOutput(PdCapEntity),
+    TextOutput,
 
     /// This capability indicates that the type of date and time awareness or
     /// time keeping ability of the PD.
-    TimeKeeping(PdCapEntity),
+    TimeKeeping,
 
     /// All PDs must be able to support the checksum mode. This capability
     /// indicates if the PD is capable of supporting CRC mode.
-    CheckCharacterSupport(PdCapEntity),
+    CheckCharacterSupport,
 
     /// This capability indicates the extent to which the PD supports
     /// communication security (Secure Channel Communication)
-    CommunicationSecurity(PdCapEntity),
+    CommunicationSecurity,
 
     /// This capability indicates the maximum size single message the PD can
     /// receive.
-    ReceiveBufferSize(PdCapEntity),
+    ReceiveBufferSize,
 
     /// This capability indicates the maximum size multi-part message which the
     /// PD can handle.
-    LargestCombinedMessage(PdCapEntity),
+    LargestCombinedMessage,
 
     /// This capability indicates whether the PD supports the transparent mode
     /// used for communicating directly with a smart card.
-    SmartCardSupport(PdCapEntity),
+    SmartCardSupport,
 
     /// This capability indicates the number of credential reader devices
     /// present. Compliance levels are bit fields to be assigned as needed.
-    Readers(PdCapEntity),
+    Readers,
 
     /// This capability indicates the ability of the reader to handle biometric
     /// input.
-    Biometrics(PdCapEntity),
+    Biometrics,
 
     /// This capability indicates if the reader is capable of supporting
     /// Secure Pin Entry (SPE) for smart cards
-    SecurePinEntry(PdCapEntity),
+    SecurePinEntry,
 
     /// This capability indicates the version of OSDP the PD supports
     /// Compliance Levels:
     ///   0 - Unspecified
     ///   1 - IEC 60839-11-5
     ///   2 - SIA OSDP 2.2
-    OsdpVersion(PdCapEntity),
-
-    /// Unknown/Unsupported capability
-    Unknown(u8, PdCapEntity),
+    OsdpVersion,
 }
 
-#[rustfmt::skip]
-impl FromStr for PdCapability {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some((cap, ent)) = s.split_once(':') {
-            match cap {
-                "ContactStatusMonitoring" => {
-                    Ok(PdCapability::ContactStatusMonitoring(PdCapEntity::from_str(ent)?))
-                },
-                "OutputControl" => {
-                    Ok(PdCapability::OutputControl(PdCapEntity::from_str(ent)?))
-                },
-                "CardDataFormat" => {
-                    Ok(PdCapability::CardDataFormat(PdCapEntity::from_str(ent)?))
-                },
-                "LedControl" => {
-                    Ok(PdCapability::LedControl(PdCapEntity::from_str(ent)?))
-                },
-                "AudibleOutput" => {
-                    Ok(PdCapability::AudibleOutput(PdCapEntity::from_str(ent)?))
-                },
-                "TextOutput" => {
-                    Ok(PdCapability::TextOutput(PdCapEntity::from_str(ent)?))
-                },
-                "TimeKeeping" => {
-                    Ok(PdCapability::TimeKeeping(PdCapEntity::from_str(ent)?))
-                },
-                "CheckCharacterSupport" => {
-                    Ok(PdCapability::CheckCharacterSupport(PdCapEntity::from_str(ent)?))
-                },
-                "CommunicationSecurity" => {
-                    Ok(PdCapability::CommunicationSecurity(PdCapEntity::from_str(ent)?))
-                },
-                "ReceiveBufferSize" => {
-                    Ok(PdCapability::ReceiveBufferSize(PdCapEntity::from_str(ent)?))
-                }
-                "LargestCombinedMessage" => {
-                    Ok(PdCapability::LargestCombinedMessage(PdCapEntity::from_str(ent)?))
-                },
-                "SmartCardSupport" => {
-                    Ok(PdCapability::SmartCardSupport(PdCapEntity::from_str(ent)?))
-                },
-                "Readers" => {
-                    Ok(PdCapability::Readers(PdCapEntity::from_str(ent)?))
-                },
-                "Biometrics" => {
-                    Ok(PdCapability::Biometrics(PdCapEntity::from_str(ent)?))
-                },
-                "SecurePinEntry" => {
-                    Ok(PdCapability::SecurePinEntry(PdCapEntity::from_str(ent)?))
-                },
-                "OsdpVersion" => {
-                    Ok(PdCapability::OsdpVersion(PdCapEntity::from_str(ent)?))
-                },
-                _ => Err(Error::InvalidArgument("PdCapability")),
+impl From<CapFunction> for libosdp_sys::osdp_pd_cap_function_code_e {
+    fn from(value: CapFunction) -> Self {
+        match value {
+            CapFunction::ContactStatusMonitoring => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_CONTACT_STATUS_MONITORING
             }
-        } else {
-            Err(Error::InvalidArgument("PdCapability"))
+            CapFunction::OutputControl => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_OUTPUT_CONTROL
+            }
+            CapFunction::CardDataFormat => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_CARD_DATA_FORMAT
+            }
+            CapFunction::LedControl => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READER_LED_CONTROL
+            }
+            CapFunction::AudibleOutput => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READER_AUDIBLE_OUTPUT
+            }
+            CapFunction::TextOutput => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READER_TEXT_OUTPUT
+            }
+            CapFunction::TimeKeeping => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_TIME_KEEPING
+            }
+            CapFunction::CheckCharacterSupport => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_CHECK_CHARACTER_SUPPORT
+            }
+            CapFunction::CommunicationSecurity => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_COMMUNICATION_SECURITY
+            }
+            CapFunction::ReceiveBufferSize => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_RECEIVE_BUFFERSIZE
+            }
+            CapFunction::LargestCombinedMessage => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_LARGEST_COMBINED_MESSAGE_SIZE
+            }
+            CapFunction::SmartCardSupport => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SMART_CARD_SUPPORT
+            }
+            CapFunction::Readers => libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READERS,
+            CapFunction::Biometrics => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_BIOMETRICS
+            }
+            CapFunction::SecurePinEntry => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SECURE_PIN_ENTRY
+            }
+            CapFunction::OsdpVersion => {
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_OSDP_VERSION
+            }
         }
     }
 }
 
-impl From<libosdp_sys::osdp_pd_cap> for PdCapability {
-    fn from(value: libosdp_sys::osdp_pd_cap) -> Self {
-        let function_code = value.function_code as libosdp_sys::osdp_pd_cap_function_code_e;
-        let e = PdCapEntity {
-            compliance: value.compliance_level,
-            num_items: value.num_items,
-        };
-        match function_code {
+impl TryFrom<libosdp_sys::osdp_pd_cap_function_code_e> for CapFunction {
+    type Error = Error;
+
+    fn try_from(value: libosdp_sys::osdp_pd_cap_function_code_e) -> Result<Self, Error> {
+        match value {
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_CONTACT_STATUS_MONITORING => {
-                PdCapability::ContactStatusMonitoring(e)
+                Ok(CapFunction::ContactStatusMonitoring)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_OUTPUT_CONTROL => {
-                PdCapability::OutputControl(e)
+                Ok(CapFunction::OutputControl)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_CARD_DATA_FORMAT => {
-                PdCapability::CardDataFormat(e)
+                Ok(CapFunction::CardDataFormat)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READER_LED_CONTROL => {
-                PdCapability::LedControl(e)
+                Ok(CapFunction::LedControl)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READER_AUDIBLE_OUTPUT => {
-                PdCapability::AudibleOutput(e)
+                Ok(CapFunction::AudibleOutput)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READER_TEXT_OUTPUT => {
-                PdCapability::TextOutput(e)
+                Ok(CapFunction::TextOutput)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_TIME_KEEPING => {
-                PdCapability::TimeKeeping(e)
+                Ok(CapFunction::TimeKeeping)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_CHECK_CHARACTER_SUPPORT => {
-                PdCapability::CheckCharacterSupport(e)
+                Ok(CapFunction::CheckCharacterSupport)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_COMMUNICATION_SECURITY => {
-                PdCapability::CommunicationSecurity(e)
+                Ok(CapFunction::CommunicationSecurity)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_RECEIVE_BUFFERSIZE => {
-                PdCapability::ReceiveBufferSize(e)
+                Ok(CapFunction::ReceiveBufferSize)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_LARGEST_COMBINED_MESSAGE_SIZE => {
-                PdCapability::LargestCombinedMessage(e)
+                Ok(CapFunction::LargestCombinedMessage)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SMART_CARD_SUPPORT => {
-                PdCapability::SmartCardSupport(e)
+                Ok(CapFunction::SmartCardSupport)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READERS => {
-                PdCapability::Readers(e)
+                Ok(CapFunction::Readers)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_BIOMETRICS => {
-                PdCapability::Biometrics(e)
+                Ok(CapFunction::Biometrics)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SECURE_PIN_ENTRY => {
-                PdCapability::SecurePinEntry(e)
+                Ok(CapFunction::SecurePinEntry)
             }
             libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_OSDP_VERSION => {
-                PdCapability::OsdpVersion(e)
+                Ok(CapFunction::OsdpVersion)
             }
-            fc => PdCapability::Unknown(fc, e)
+            _ => Err(Error::Malformed("capability function")),
         }
     }
 }
 
-#[rustfmt::skip]
-impl From<PdCapability> for u8 {
-    fn from(val: PdCapability) -> Self {
-        match val {
-            PdCapability::ContactStatusMonitoring(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_CONTACT_STATUS_MONITORING as u8
-            }
-            PdCapability::OutputControl(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_OUTPUT_CONTROL as u8
-            }
-            PdCapability::CardDataFormat(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_CARD_DATA_FORMAT as u8
-            }
-            PdCapability::LedControl(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READER_LED_CONTROL as u8
-            }
-            PdCapability::AudibleOutput(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READER_AUDIBLE_OUTPUT as u8
-            }
-            PdCapability::TextOutput(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READER_TEXT_OUTPUT as u8
-            }
-            PdCapability::TimeKeeping(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_TIME_KEEPING as u8
-            }
-            PdCapability::CheckCharacterSupport(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_CHECK_CHARACTER_SUPPORT as u8
-            }
-            PdCapability::CommunicationSecurity(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_COMMUNICATION_SECURITY as u8
-            }
-            PdCapability::ReceiveBufferSize(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_RECEIVE_BUFFERSIZE as u8
-            }
-            PdCapability::LargestCombinedMessage(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_LARGEST_COMBINED_MESSAGE_SIZE as u8
-            }
-            PdCapability::SmartCardSupport(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SMART_CARD_SUPPORT as u8
-            }
-            PdCapability::Readers(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READERS as u8
-            }
-            PdCapability::Biometrics(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_BIOMETRICS as u8
-            }
-            PdCapability::SecurePinEntry(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SECURE_PIN_ENTRY as u8
-            }
-            PdCapability::OsdpVersion(_) => {
-                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_OSDP_VERSION as u8
-            }
-            PdCapability::Unknown(fc, _) => fc
+/// What a PD can do for one [`CapFunction`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Capability {
+    /// The function this capability describes.
+    pub function: CapFunction,
+
+    /// What the PD can do with the function; its meaning depends on the
+    /// function.
+    pub compliance: u8,
+
+    /// How many of the function's entities the PD has: for
+    /// [`CapFunction::LedControl`], the number of LEDs.
+    pub items: u8,
+}
+
+impl Capability {
+    /// Create a capability for `function`.
+    pub fn new(function: CapFunction, compliance: u8, items: u8) -> Self {
+        Self {
+            function,
+            compliance,
+            items,
         }
     }
 }
 
-impl From<PdCapability> for libosdp_sys::osdp_pd_cap {
-    fn from(value: PdCapability) -> Self {
-        let function_code: u8 = value.clone().into();
-        match value {
-            PdCapability::ContactStatusMonitoring(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::OutputControl(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::CardDataFormat(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::LedControl(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::AudibleOutput(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::TextOutput(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::TimeKeeping(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::CheckCharacterSupport(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::CommunicationSecurity(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::ReceiveBufferSize(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::LargestCombinedMessage(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::SmartCardSupport(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::Readers(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::Biometrics(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::SecurePinEntry(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::OsdpVersion(e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
-            PdCapability::Unknown(_, e) => libosdp_sys::osdp_pd_cap {
-                function_code,
-                compliance_level: e.compliance,
-                num_items: e.num_items,
-            },
+impl From<Capability> for libosdp_sys::osdp_pd_cap {
+    fn from(value: Capability) -> Self {
+        libosdp_sys::osdp_pd_cap {
+            function_code: value.function.into(),
+            compliance_level: value.compliance,
+            num_items: value.items,
         }
+    }
+}
+
+impl TryFrom<libosdp_sys::osdp_pd_cap> for Capability {
+    type Error = Error;
+
+    fn try_from(value: libosdp_sys::osdp_pd_cap) -> Result<Self, Error> {
+        Ok(Capability {
+            function: value.function_code.try_into()?,
+            compliance: value.compliance_level,
+            items: value.num_items,
+        })
     }
 }
 
@@ -433,15 +256,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bad_numbers_are_invalid_arguments() {
-        for s in [
-            "LedControl:Compliance:x,NumItems:1",
-            "LedControl:Compliance:1,NumItems:256",
-        ] {
-            assert_eq!(
-                PdCapability::from_str(s),
-                Err(Error::InvalidArgument("PdCapEntity"))
-            );
-        }
+    fn capability_round_trips() {
+        let cap = Capability::new(CapFunction::OsdpVersion, 2, 0);
+        let raw: libosdp_sys::osdp_pd_cap = cap.into();
+        assert_eq!(
+            raw.function_code,
+            libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_OSDP_VERSION
+        );
+        assert_eq!(Capability::try_from(raw), Ok(cap));
+    }
+
+    #[test]
+    fn unknown_function_codes_are_malformed() {
+        let raw = libosdp_sys::osdp_pd_cap {
+            function_code: libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SENTINEL,
+            compliance_level: 0,
+            num_items: 0,
+        };
+        assert_eq!(
+            Capability::try_from(raw),
+            Err(Error::Malformed("capability function"))
+        );
     }
 }

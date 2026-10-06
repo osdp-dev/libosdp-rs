@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use libosdp::{
-    Channel, ChannelError, Error, Flag, PdCapEntity, PdCapability, PdInfoBuilder, Responder,
+    CapFunction, Capability, Channel, ChannelError, Error, Flag, PdInfoBuilder, Responder,
 };
 use std::{thread, time::Duration};
 
@@ -58,7 +58,7 @@ fn main() -> Result<(), Error> {
         .address(101)?
         .baud_rate(115200)?
         .flag(Flag::EnforceSecure)
-        .capability(PdCapability::CommunicationSecurity(PdCapEntity::new(1, 1)))
+        .capability(Capability::new(CapFunction::CommunicationSecurity, 1, 1))
         .secure_channel_key(key);
     let pd = libosdp::PeripheralDevice::new(pd_info, Box::new(channel))?;
     pd.set_command_handler(|command, _: &mut Responder<'_>| {
