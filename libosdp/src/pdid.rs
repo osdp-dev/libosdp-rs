@@ -46,7 +46,7 @@ impl From<libosdp_sys::osdp_pd_id> for PdId {
             version: u8::try_from(value.version).unwrap_or(0),
             model: u8::try_from(value.model).unwrap_or(0),
             vendor_code,
-            serial_number: value.serial_number.to_be_bytes(),
+            serial_number: value.serial_number.to_le_bytes(),
             firmware_version,
         }
     }
@@ -76,5 +76,18 @@ impl From<PdId> for libosdp_sys::osdp_pd_id {
             serial_number: value.serial_number.as_le(),
             firmware_version: value.firmware_version.as_le(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PdId;
+
+    #[test]
+    fn pd_id_round_trips_through_libosdp() {
+        let id = PdId::from_number(7);
+        let raw: libosdp_sys::osdp_pd_id = id.into();
+        assert_eq!(raw.serial_number, 0x0700_0000);
+        assert_eq!(PdId::from(raw), id);
     }
 }
