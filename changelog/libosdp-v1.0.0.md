@@ -53,12 +53,17 @@ Release subject ## TODO
   number of LibOSDP's units or does not fit
 - libosdp: Make ConvertEndian private; it only packed vendor codes
   and IDs for LibOSDP
+- cp: Replace set_flag, which panicked when LibOSDP refuses a change,
+  with set_flags and clear_flags, which return Error::Rejected and
+  change no flag
 
 ## Enhancements
 
 - ## TODO
 - commands: Add LedColor::White, new in LibOSDP 4.0
 - libosdp: Declare Rust 1.85 as the minimum supported version
+- flags: Add LibOSDP 4.0's setup flags: EnableNotification,
+  CapturePackets, AllowEmptyEncryptedDataBlock and BioReadMultipart
 
 ## Fixes
 

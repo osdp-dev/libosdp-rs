@@ -108,9 +108,12 @@ bitflags::bitflags! {
         /// assumptions don't hold. The following restrictions are enforced in
         /// this mode:
         ///
-        /// - Don't allow use of SCBK-D (implies no INSTALL_MODE)
+        /// - Don't allow use of SCBK-D
         /// - Assume that a KEYSET was successful at an earlier time
-        /// - Disallow master key based SCBK derivation
+        /// - CP does not allow user requested broadcast commands
+        ///
+        /// Cannot be combined with [`Flag::InstallMode`]: setup fails with
+        /// [`Error::Setup`].
         const EnforceSecure = libosdp_sys::OSDP_FLAG_ENFORCE_SECURE;
 
         /// When set, the PD would allow one session of secure channel to be
@@ -119,11 +122,35 @@ bitflags::bitflags! {
         /// In this mode, the PD is in a vulnerable state, the application is
         /// responsible for making sure that the device enters this mode only
         /// during controlled/provisioning-time environments.
+        ///
+        /// Cannot be combined with [`Flag::EnforceSecure`]: setup fails with
+        /// [`Error::Setup`].
         const InstallMode = libosdp_sys::OSDP_FLAG_INSTALL_MODE;
 
         /// When set, CP will not error and fail when the PD sends an unknown,
         /// unsolicited response. In PD mode this flag has no use.
         const IgnoreUnsolicited = libosdp_sys::OSDP_FLAG_IGN_UNSOLICITED;
+
+        /// Report what LibOSDP observes about the link -- secure channel
+        /// and online state changes, multi-part progress, the PD's
+        /// identity -- to the application.
+        const EnableNotification = libosdp_sys::OSDP_FLAG_ENABLE_NOTIFICATION;
+
+        /// Capture the packets this device sees to a pcap file, finished
+        /// when the context is dropped. Takes effect only when libosdp-sys
+        /// is built with its `packet_trace` or `data_trace` feature.
+        const CapturePackets = libosdp_sys::OSDP_FLAG_CAPTURE_PACKETS;
+
+        /// Accept a secure channel message with an empty encrypted data
+        /// block, which some non-conforming CPs send. In CP mode this flag
+        /// has no use.
+        const AllowEmptyEncryptedDataBlock =
+            libosdp_sys::OSDP_FLAG_ALLOW_EMPTY_ENCRYPTED_DATA_BLOCK;
+
+        /// Let a biometric read reply span several packets, so templates
+        /// larger than one packet can be sent. This is not part of OSDP, so
+        /// both the CP and the PD must set it.
+        const BioReadMultipart = libosdp_sys::OSDP_FLAG_BIOREADR_MULTIPART;
     }
 }
 
@@ -135,6 +162,10 @@ impl core::str::FromStr for Flag {
             "EnforceSecure" => Ok(Flag::EnforceSecure),
             "InstallMode" => Ok(Flag::InstallMode),
             "IgnoreUnsolicited" => Ok(Flag::IgnoreUnsolicited),
+            "EnableNotification" => Ok(Flag::EnableNotification),
+            "CapturePackets" => Ok(Flag::CapturePackets),
+            "AllowEmptyEncryptedDataBlock" => Ok(Flag::AllowEmptyEncryptedDataBlock),
+            "BioReadMultipart" => Ok(Flag::BioReadMultipart),
             _ => Err(Error::InvalidArgument("unknown flag name")),
         }
     }

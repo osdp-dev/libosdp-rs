@@ -251,19 +251,32 @@ impl ControlPanel {
         }
     }
 
-    /// Set [`Flag`] for `pd`.
+    /// Set `flags` for `pd` on a running link.
     ///
-    /// # Panics
-    ///
-    /// Panics when LibOSDP refuses the change: setting
-    /// [`Flag::InstallMode`], clearing [`Flag::EnforceSecure`], or
-    /// setting [`Flag::EnforceSecure`] on a PD without an SCBK.
-    pub fn set_flag(&self, pd: PdIndex, flags: Flag, value: bool) {
+    /// Only [`Flag::EnforceSecure`], [`Flag::IgnoreUnsolicited`],
+    /// [`Flag::EnableNotification`] and
+    /// [`Flag::AllowEmptyEncryptedDataBlock`] can change after setup.
+    /// LibOSDP refuses any other flag, and [`Flag::EnforceSecure`] on a PD
+    /// set up without a secure channel key, with [`Error::Rejected`]; a
+    /// refused call changes no flag.
+    pub fn set_flags(&self, pd: PdIndex, flags: Flag) -> Result<()> {
+        self.modify_flags(pd, flags, true)
+    }
+
+    /// Clear `flags` for `pd` on a running link. As for
+    /// [`set_flags`](Self::set_flags), and [`Flag::EnforceSecure`], once
+    /// set, cannot be cleared.
+    pub fn clear_flags(&self, pd: PdIndex, flags: Flag) -> Result<()> {
+        self.modify_flags(pd, flags, false)
+    }
+
+    fn modify_flags(&self, pd: PdIndex, flags: Flag, set: bool) -> Result<()> {
         let rc =
-            unsafe { libosdp_sys::osdp_cp_modify_flag(self.ctx, pd.as_c(), flags.bits(), value) };
+            unsafe { libosdp_sys::osdp_cp_modify_flag(self.ctx, pd.as_c(), flags.bits(), set) };
         if rc < 0 {
-            // The flag API has no error path, so a refused change panics.
-            panic!("osdp_cp_modify_flag failed!")
+            Err(Error::Rejected)
+        } else {
+            Ok(())
         }
     }
 

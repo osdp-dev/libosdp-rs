@@ -5,7 +5,7 @@
 
 use libosdp::{
     Buzzer, BuzzerCommand, Channel, ChannelError, Command, ControlPanelBuilder, Error,
-    FileError, PdInfoBuilder,
+    FileError, Flag, PdInfoBuilder,
 };
 
 struct Idle;
@@ -95,5 +95,34 @@ fn submit_to_an_offline_pd_is_rejected() -> Result<(), Error> {
         action: Buzzer::Off,
     });
     assert!(matches!(cp.submit(pd, buzz), Err(Error::Rejected)));
+    Ok(())
+}
+
+#[test]
+fn flags_libosdp_refuses_on_a_live_link_are_rejected() -> Result<(), Error> {
+    let mut builder = ControlPanelBuilder::new(Box::new(Idle));
+    let pd = builder.add_pd(pd_at(101)?)?;
+    let cp = builder.build()?;
+    assert_eq!(cp.set_flags(pd, Flag::EnableNotification), Ok(()));
+    assert_eq!(cp.clear_flags(pd, Flag::EnableNotification), Ok(()));
+    assert_eq!(cp.set_flags(pd, Flag::InstallMode), Err(Error::Rejected));
+    assert_eq!(
+        cp.set_flags(pd, Flag::IgnoreUnsolicited | Flag::CapturePackets),
+        Err(Error::Rejected)
+    );
+    assert_eq!(cp.set_flags(pd, Flag::EnforceSecure), Err(Error::Rejected));
+    Ok(())
+}
+
+#[test]
+fn enforce_secure_cannot_be_cleared() -> Result<(), Error> {
+    let mut builder = ControlPanelBuilder::new(Box::new(Idle));
+    let pd = builder.add_pd(pd_at(101)?.secure_channel_key([7; 16]))?;
+    let cp = builder.build()?;
+    assert_eq!(cp.set_flags(pd, Flag::EnforceSecure), Ok(()));
+    assert_eq!(
+        cp.clear_flags(pd, Flag::EnforceSecure),
+        Err(Error::Rejected)
+    );
     Ok(())
 }
