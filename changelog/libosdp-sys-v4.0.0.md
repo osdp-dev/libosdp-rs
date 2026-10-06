@@ -13,6 +13,9 @@ Release subject ## TODO
 ## Fixes
 
 - ## TODO
+- build: Make the packet_trace, data_trace and skip_mark_byte features
+  take effect: they defined CONFIG_OSDP_* macros, which LibOSDP stopped
+  reading when they became OPT_OSDP_*
 
 ## Changes
 

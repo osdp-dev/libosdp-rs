@@ -171,19 +171,19 @@ fn main() -> Result<()> {
     }
 
     if cfg!(feature = "skip_mark_byte") {
-        build = build.define("CONFIG_OSDP_SKIP_MARK_BYTE", "1");
+        build = build.define("OPT_OSDP_SKIP_MARK_BYTE", "1");
     }
 
     if cfg!(feature = "packet_trace") {
-        build = build
-            .define("CONFIG_OSDP_PACKET_TRACE", "1")
-            .file("vendor/utils/src/pcap_gen.c")
-            .file("vendor/src/osdp_diag.c");
+        build = build.define("OPT_OSDP_PACKET_TRACE", "1");
     }
 
     if cfg!(feature = "data_trace") {
+        build = build.define("OPT_OSDP_DATA_TRACE", "1");
+    }
+
+    if cfg!(feature = "packet_trace") || cfg!(feature = "data_trace") {
         build = build
-            .define("CONFIG_OSDP_DATA_TRACE", "1")
             .file("vendor/utils/src/pcap_gen.c")
             .file("vendor/src/osdp_diag.c");
     }
