@@ -798,6 +798,63 @@ impl From<FileTxCommand> for libosdp_sys::osdp_cmd_file_tx {
     }
 }
 
+/// Set a PD's local date and time (osdp_TDSET). Current editions of OSDP
+/// drop this command; LibOSDP keeps it for older devices, which accept it
+/// when they advertise the time keeping capability.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TimeDateCommand {
+    /// Year, in full: 2026
+    pub year: u16,
+    /// Month of the year, 1-12
+    pub month: u8,
+    /// Day of the month, 1-31; not checked against the month, so February
+    /// 31 is accepted
+    pub day: u8,
+    /// Hours since midnight, 0-23
+    pub hour: u8,
+    /// Minutes past the hour, 0-59
+    pub minute: u8,
+    /// Seconds past the minute, 0-59
+    pub second: u8,
+}
+
+impl From<libosdp_sys::osdp_cmd_tdset> for TimeDateCommand {
+    fn from(value: libosdp_sys::osdp_cmd_tdset) -> Self {
+        TimeDateCommand {
+            year: value.year,
+            month: value.month,
+            day: value.day,
+            hour: value.hour,
+            minute: value.minute,
+            second: value.second,
+        }
+    }
+}
+
+impl TryFrom<TimeDateCommand> for libosdp_sys::osdp_cmd_tdset {
+    type Error = Error;
+
+    fn try_from(value: TimeDateCommand) -> Result<Self> {
+        if !(1..=12).contains(&value.month)
+            || !(1..=31).contains(&value.day)
+            || value.hour > 23
+            || value.minute > 59
+            || value.second > 59
+        {
+            return Err(Error::InvalidArgument("date or time out of range"));
+        }
+        Ok(libosdp_sys::osdp_cmd_tdset {
+            year: value.year,
+            month: value.month,
+            day: value.day,
+            hour: value.hour,
+            minute: value.minute,
+            second: value.second,
+        })
+    }
+}
+
 /// CP interacts with and controls PDs by sending commands to it. The commands
 /// in this enum are specified by OSDP specification.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -843,6 +900,9 @@ pub enum Command {
     /// Scan a body part and match it against a template; the PD needs the
     /// biometrics capability
     BioMatch(BioMatchCommand),
+
+    /// Set the PD's local date and time
+    TimeDate(TimeDateCommand),
 }
 
 impl TryFrom<Command> for libosdp_sys::osdp_cmd {
@@ -934,6 +994,14 @@ impl TryFrom<Command> for libosdp_sys::osdp_cmd {
                     biomatch: c.try_into()?,
                 },
             },
+            Command::TimeDate(c) => libosdp_sys::osdp_cmd {
+                _node: unsafe { core::mem::zeroed() },
+                id: libosdp_sys::osdp_cmd_e_OSDP_CMD_TDSET,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_cmd__bindgen_ty_1 {
+                    tdset: c.try_into()?,
+                },
+            },
         })
     }
 }
@@ -979,6 +1047,9 @@ impl TryFrom<libosdp_sys::osdp_cmd> for Command {
             libosdp_sys::osdp_cmd_e_OSDP_CMD_BIOMATCH => Ok(Command::BioMatch(
                 unsafe { value.__bindgen_anon_1.biomatch }.try_into()?,
             )),
+            libosdp_sys::osdp_cmd_e_OSDP_CMD_TDSET => Ok(Command::TimeDate(
+                unsafe { value.__bindgen_anon_1.tdset }.into(),
+            )),
             _ => Err(Error::Malformed("command id")),
         }
     }
@@ -989,6 +1060,7 @@ mod tests {
     use crate::{
         Buzzer, BuzzerCommand, Command, Error, KeySetCommand, LedColor, LedCommand, LedParams,
         LedPermanent, LedTemporary, MfgCommand, OutputAction, OutputCommand, TextCommand, TextMode,
+        TimeDateCommand,
     };
     use core::time::Duration;
     use libosdp_sys::osdp_cmd_mfg;
@@ -1179,6 +1251,28 @@ mod tests {
         });
         let raw: Result<libosdp_sys::osdp_cmd, Error> = cmd.try_into();
         assert!(matches!(raw, Err(Error::TooLong { .. })));
+    }
+
+    #[test]
+    fn time_and_date_round_trip_and_are_range_checked() {
+        let set = TimeDateCommand {
+            year: 2026,
+            month: 10,
+            day: 5,
+            hour: 23,
+            minute: 59,
+            second: 59,
+        };
+        assert_eq!(round_trip(Command::TimeDate(set)), Command::TimeDate(set));
+        for bad in [
+            TimeDateCommand { month: 13, ..set },
+            TimeDateCommand { day: 0, ..set },
+            TimeDateCommand { hour: 24, ..set },
+            TimeDateCommand { second: 60, ..set },
+        ] {
+            let raw: Result<libosdp_sys::osdp_cmd, Error> = Command::TimeDate(bad).try_into();
+            assert!(matches!(raw, Err(Error::InvalidArgument(_))));
+        }
     }
 
     #[test]

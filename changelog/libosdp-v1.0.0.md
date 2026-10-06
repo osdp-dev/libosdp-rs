@@ -105,6 +105,9 @@ Release subject ## TODO
   with BioType, BioFormat and BioStatus. A PD refuses a body part or
   format it cannot scan with Nak::BioType or Nak::BioFormat.
   Submission::cancel stops a multi-part read
+- commands: Add Command::TimeDate, OSDP's obsolete date and time set
+  (osdp_TDSET), for older PDs that keep time. A date or time out of
+  range is refused with Error::InvalidArgument
 
 ## Fixes
 

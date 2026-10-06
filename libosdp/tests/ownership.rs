@@ -13,7 +13,7 @@ use libosdp::{
     CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
     FileTxCommand, Finalize, Flag, KeyPress, MfgCommand, MfgReply, MfgStatus, MpKind, MpOutcome,
     MpPhase, Nak, Notification, OpenMode, PdId, PdIndex, PdInfoBuilder, PeripheralDevice,
-    ReaderStatus, Responder, Status, StatusKind, Submission,
+    ReaderStatus, Responder, Status, StatusKind, Submission, TimeDateCommand,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -991,6 +991,40 @@ fn biometric_match_of_an_unsupported_type_is_refused() -> Result<()> {
         Err(CompletionError::Failed)
     );
     assert_eq!(*seen.lock().unwrap(), Some(Command::BioMatch(request)));
+    Ok(())
+}
+
+#[test]
+fn pd_that_keeps_time_receives_the_date_and_time() -> Result<()> {
+    let (cp_bus, pd_bus) = MemoryChannel::new();
+    let pd = PeripheralDevice::new(
+        pd_info()?
+            .capability(Capability::new(CapFunction::CommunicationSecurity, 1, 1))
+            .capability(Capability::new(CapFunction::TimeKeeping, 1, 0))
+            .secure_channel_key(KEY),
+        Box::new(pd_bus),
+    )?;
+    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
+    let target = builder.add_pd(pd_info()?.secure_channel_key(KEY))?;
+    let cp = builder.build()?;
+    refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
+    let seen = Arc::new(Mutex::new(None));
+    let sink = seen.clone();
+    pd.set_command_handler(move |cmd, _: &mut Responder<'_>| {
+        *sink.lock().unwrap() = Some(cmd);
+        Ok(())
+    });
+    let set = TimeDateCommand {
+        year: 2026,
+        month: 10,
+        day: 5,
+        hour: 12,
+        minute: 30,
+        second: 0,
+    };
+    let submission = cp.submit(target, Command::TimeDate(set))?;
+    assert_eq!(refresh_until_done(&cp, &pd, &submission), Ok(()));
+    assert_eq!(*seen.lock().unwrap(), Some(Command::TimeDate(set)));
     Ok(())
 }
 
