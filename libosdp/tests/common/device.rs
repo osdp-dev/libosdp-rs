@@ -50,8 +50,10 @@ impl CpDevice {
                     {
                         let cp = dev.lock().unwrap();
                         cp.refresh();
-                        while let Some((pd, CpEvent::Event(event))) = cp.next_event() {
-                            sender.send((pd, event)).expect("CP event send");
+                        while let Some((pd, item)) = cp.next_event() {
+                            if let CpEvent::Event(event) = item {
+                                sender.send((pd, event)).expect("CP event send");
+                            }
                         }
                     }
                     thread::sleep(time::Duration::from_millis(10));

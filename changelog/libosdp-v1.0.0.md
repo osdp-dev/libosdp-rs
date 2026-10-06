@@ -84,6 +84,12 @@ Release subject ## TODO
 - libosdp: Declare Rust 1.85 as the minimum supported version
 - flags: Add LibOSDP 4.0's setup flags: EnableNotification,
   CapturePackets, AllowEmptyEncryptedDataBlock and BioReadMultipart
+- notifications: Report what LibOSDP observes about a link -- secure
+  channel and online changes, multi-part progress, the PD's identity,
+  TRS session state -- as Notifications, for PDs with
+  Flag::EnableNotification set. A CP hands them over through next_event
+  as CpEvent::Notification, a PD through next_notification; until now a
+  PD refused them as unknown commands
 
 ## Fixes
 

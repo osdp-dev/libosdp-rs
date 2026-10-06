@@ -74,6 +74,7 @@ mod error;
 mod events;
 mod ffi;
 mod file;
+mod notification;
 mod pd;
 mod pdcap;
 mod pdid;
@@ -93,6 +94,7 @@ pub use pdinfo::*;
 
 pub use cp::{ControlPanel, ControlPanelBuilder, CpEvent, PdIndex};
 pub use error::{CompletionError, Error, FileError, Nak};
+pub use notification::{MpKind, MpOutcome, MpPhase, Multipart, Notification, TrsSessionStatus};
 pub use pd::{CommandHandler, PeripheralDevice, Responder};
 pub use status::{ReaderStatus, Status, StatusKind};
 pub use submit::Submission;
@@ -135,7 +137,7 @@ bitflags::bitflags! {
 
         /// Report what LibOSDP observes about the link -- secure channel
         /// and online state changes, multi-part progress, the PD's
-        /// identity -- to the application.
+        /// identity -- as [`Notification`]s.
         const EnableNotification = libosdp_sys::OSDP_FLAG_ENABLE_NOTIFICATION;
 
         /// Capture the packets this device sees to a pcap file, finished
@@ -195,5 +197,6 @@ mod serde_tests {
     fn commands_and_events_are_serde() {
         assert_serde::<crate::Command>();
         assert_serde::<crate::Event>();
+        assert_serde::<crate::Notification>();
     }
 }

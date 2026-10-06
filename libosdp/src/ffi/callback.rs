@@ -3,17 +3,19 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{queue::DrainQueue, CommandHandler, CpEvent, Nak, PdIndex, Responder};
+use crate::{queue::DrainQueue, CommandHandler, CpEvent, Nak, Notification, PdIndex, Responder};
 use alloc::boxed::Box;
 use core::{cell::Cell, ffi::c_void};
 
 pub(crate) type CpEventQueue = DrainQueue<(PdIndex, CpEvent)>;
 
 /// What the PD command callback is registered with: the context, which an
-/// inline reply is submitted to, and the application's handler.
+/// inline reply is submitted to, the application's handler, and the queue
+/// that LibOSDP's notifications, which arrive as commands, are diverted to.
 pub(crate) struct PdCommandSlot {
     pub(crate) ctx: *mut libosdp_sys::osdp_t,
     pub(crate) handler: CallbackSlot<Box<dyn CommandHandler>>,
+    pub(crate) notifications: DrainQueue<Notification>,
 }
 
 /// The application's current callback. LibOSDP is given a pointer to the
@@ -49,12 +51,19 @@ pub(crate) unsafe extern "C" fn cp_event_trampoline(
     event: *mut libosdp_sys::osdp_event,
 ) -> i32 {
     let queue = unsafe { &*(data as *const CpEventQueue) };
-    match unsafe { core::ptr::read_unaligned(event).try_into() } {
-        Ok(event) => {
-            queue.push((PdIndex::new(pd as u8), CpEvent::Event(event)));
+    let event = unsafe { core::ptr::read_unaligned(event) };
+    let item = if event.type_ == libosdp_sys::osdp_event_type_OSDP_EVENT_NOTIFICATION {
+        Notification::try_from(unsafe { event.__bindgen_anon_1.notif }).map(CpEvent::Notification)
+    } else {
+        event.try_into().map(CpEvent::Event)
+    };
+    match item {
+        Ok(item) => {
+            queue.push((PdIndex::new(pd as u8), item));
             0
         }
-        Err(_) => -1, // Failed to parse the event data -> Send NAK
+        // LibOSDP ignores the result; an event that does not convert is dropped
+        Err(_) => -1,
     }
 }
 
@@ -63,7 +72,14 @@ pub(crate) unsafe extern "C" fn pd_command_trampoline(
     cmd_ptr: *mut libosdp_sys::osdp_cmd,
 ) -> i32 {
     let slot = unsafe { &*(data as *const PdCommandSlot) };
-    let Ok(cmd) = unsafe { core::ptr::read_unaligned(cmd_ptr) }.try_into() else {
+    let cmd = unsafe { core::ptr::read_unaligned(cmd_ptr) };
+    if cmd.id == libosdp_sys::osdp_cmd_e_OSDP_CMD_NOTIFICATION {
+        if let Ok(notification) = Notification::try_from(unsafe { cmd.__bindgen_anon_1.notif }) {
+            slot.notifications.push(notification);
+        }
+        return 0;
+    }
+    let Ok(cmd) = cmd.try_into() else {
         return Nak::Record.as_c();
     };
     let mut responder = Responder::new(slot.ctx, cmd_ptr);

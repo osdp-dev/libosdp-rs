@@ -10,7 +10,8 @@ use common::memory_channel::MemoryChannel;
 use libosdp::{
     Buzzer, BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
     CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
-    FileTxCommand, KeyPress, MfgCommand, MfgReply, Nak, OpenMode, PdId, PdIndex, PdInfoBuilder,
+    FileTxCommand, Flag, KeyPress, MfgCommand, MfgReply, Nak, Notification, OpenMode, PdId,
+    PdIndex, PdInfoBuilder,
     PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
 };
 use std::sync::{
@@ -205,6 +206,59 @@ fn secure_pair_with_event_queue(
         std::thread::sleep(Duration::from_millis(5));
     }
     Ok((cp, target, pd))
+}
+
+fn notifying_pair() -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
+    let (cp_bus, pd_bus) = MemoryChannel::new();
+    let pd = PeripheralDevice::new(
+        pd_info()?
+            .flag(Flag::EnableNotification)
+            .id(&PdId::from_number(7))
+            .capability(Capability::new(CapFunction::CommunicationSecurity, 1, 1))
+            .secure_channel_key(KEY),
+        Box::new(pd_bus),
+    )?;
+    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
+    let target = builder.add_pd(
+        pd_info()?
+            .flag(Flag::EnableNotification)
+            .secure_channel_key(KEY),
+    )?;
+    let cp = builder.build()?;
+    Ok((cp, target, pd))
+}
+
+#[test]
+fn link_changes_are_reported_as_notifications() -> Result<()> {
+    let (cp, target, pd) = notifying_pair()?;
+    let commands = Arc::new(AtomicUsize::new(0));
+    let seen = commands.clone();
+    pd.set_command_handler(move |_, _: &mut Responder<'_>| {
+        seen.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    });
+    let (mut on_cp, mut on_pd) = (Vec::new(), Vec::new());
+    let secure = Notification::ScStatus {
+        active: true,
+        scbk_d: false,
+    };
+    refresh_until(&cp, &pd, || {
+        while let Some((pd, item)) = cp.next_event() {
+            assert_eq!(pd, target);
+            if let CpEvent::Notification(notification) = item {
+                on_cp.push(notification);
+            }
+        }
+        while let Some(notification) = pd.next_notification() {
+            on_pd.push(notification);
+        }
+        on_cp.contains(&secure) && on_pd.contains(&secure)
+    });
+    assert!(on_cp.contains(&Notification::PdStatus { online: true }));
+    assert!(on_cp.contains(&Notification::PdId(PdId::from_number(7))));
+    assert!(on_pd.contains(&Notification::PdStatus { online: true }));
+    assert_eq!(commands.load(Ordering::SeqCst), 0);
+    Ok(())
 }
 
 #[test]

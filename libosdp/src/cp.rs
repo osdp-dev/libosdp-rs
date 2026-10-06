@@ -8,7 +8,7 @@
 
 use crate::{
     busy::Busy, CapFunction, Capability, Channel, Command, Error, Event, FileOps, FileProgress,
-    Flag, PdId, PdInfoBuilder, Submission,
+    Flag, Notification, PdId, PdInfoBuilder, Submission,
 };
 use crate::ffi::{
     callback::{cp_event_trampoline, CpEventQueue, Shared},
@@ -65,6 +65,10 @@ impl core::fmt::Display for PdIndex {
 pub enum CpEvent {
     /// An event a PD reported.
     Event(Event),
+
+    /// Something LibOSDP observed about the link to a PD; reported for PDs
+    /// with [`Flag::EnableNotification`] set.
+    Notification(Notification),
 }
 
 /// Builder for a [`ControlPanel`] driving the PDs on one OSDP bus.
@@ -214,10 +218,10 @@ impl ControlPanel {
         usize::try_from(dropped).unwrap_or(0)
     }
 
-    /// Take the oldest event that PDs reported during
-    /// [`ControlPanel::refresh`]. Drain them after every refresh: once the
-    /// queue is full, newer events are dropped and counted by
-    /// [`ControlPanel::dropped_events`].
+    /// Take the oldest event that PDs reported, or notification that
+    /// LibOSDP raised, during [`ControlPanel::refresh`]. Drain them after
+    /// every refresh: once the queue is full, newer ones are dropped and
+    /// counted by [`ControlPanel::dropped_events`].
     pub fn next_event(&self) -> Option<(PdIndex, CpEvent)> {
         self.events.get().pop()
     }

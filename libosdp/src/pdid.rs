@@ -7,6 +7,8 @@ use super::ConvertEndian;
 
 /// PD ID information advertised by the PD.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PdId {
     /// 1-Byte Manufacturer's version number
     pub version: u8,

@@ -13,8 +13,8 @@
 //! to the CP.
 
 use crate::{
-    busy::Busy, Capability, Channel, Command, Error, Event, FileOps, FileProgress, Nak,
-    PdInfoBuilder, Submission,
+    busy::Busy, queue::DrainQueue, Capability, Channel, Command, Error, Event, FileOps,
+    FileProgress, Nak, Notification, PdInfoBuilder, Submission,
 };
 use crate::ffi::{
     callback::{pd_command_trampoline, CallbackSlot, PdCommandSlot, Shared},
@@ -28,9 +28,15 @@ use alloc::boxed::Box;
 use core::{
     cell::{Cell, RefCell},
     marker::PhantomData,
+    num::NonZeroUsize,
 };
 
 type Result<T> = core::result::Result<T, Error>;
+
+const NOTIFICATION_QUEUE_CAPACITY: NonZeroUsize = match NonZeroUsize::new(32) {
+    Some(capacity) => capacity,
+    None => unreachable!(),
+};
 
 /// Answers the commands a CP sends to a [`PeripheralDevice`].
 ///
@@ -170,6 +176,7 @@ impl PeripheralDevice {
         let command_handler = Shared::new(PdCommandSlot {
             ctx,
             handler: CallbackSlot::new(),
+            notifications: DrainQueue::new(NOTIFICATION_QUEUE_CAPACITY),
         });
         unsafe {
             libosdp_sys::osdp_pd_set_command_callback(
@@ -225,6 +232,21 @@ impl PeripheralDevice {
             return Err(Error::Rejected);
         }
         Ok(Submission::new(slot))
+    }
+
+    /// Take the oldest notification that LibOSDP raised during
+    /// [`PeripheralDevice::refresh`]; raised only with
+    /// [`Flag::EnableNotification`](crate::Flag::EnableNotification) set.
+    /// Drain them after every refresh: once 32 are queued, newer ones are
+    /// dropped and counted by [`PeripheralDevice::dropped_notifications`].
+    pub fn next_notification(&self) -> Option<Notification> {
+        self.command_handler.get().notifications.pop()
+    }
+
+    /// How many notifications were dropped because the queue was full,
+    /// counted since this context was built; it is never reset.
+    pub fn dropped_notifications(&self) -> usize {
+        self.command_handler.get().notifications.dropped()
     }
 
     /// Answer the CP's commands with `handler`, replacing the previous one.
