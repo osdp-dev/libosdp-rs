@@ -8,11 +8,12 @@ mod common;
 
 use common::memory_channel::MemoryChannel;
 use libosdp::{
-    Buzzer, BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
+    BioFormat, BioMatchCommand, BioReadCommand, BioReadReply, BioStatus, BioType, Buzzer,
+    BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
     CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
-    FileTxCommand, Finalize, Flag, KeyPress, MfgCommand, MfgReply, MfgStatus, MpKind, MpOutcome, MpPhase, Nak,
-    Notification, OpenMode, PdId, PdIndex, PdInfoBuilder,
-    PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
+    FileTxCommand, Finalize, Flag, KeyPress, MfgCommand, MfgReply, MfgStatus, MpKind, MpOutcome,
+    MpPhase, Nak, Notification, OpenMode, PdId, PdIndex, PdInfoBuilder, PeripheralDevice,
+    ReaderStatus, Responder, Status, StatusKind, Submission,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -892,6 +893,104 @@ fn pd_finalizes_a_received_file_with_its_own_outcome() -> Result<()> {
         }
     }
     assert_eq!(done, Some(MpOutcome::Invalid));
+    Ok(())
+}
+
+fn bio_pair() -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
+    let (cp_bus, pd_bus) = MemoryChannel::new();
+    let pd = PeripheralDevice::new(
+        pd_info()?
+            .capability(Capability::new(CapFunction::CommunicationSecurity, 1, 1))
+            .capability(Capability::new(CapFunction::Biometrics, 1, 1))
+            .secure_channel_key(KEY),
+        Box::new(pd_bus),
+    )?;
+    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
+    let target = builder.add_pd(pd_info()?.secure_channel_key(KEY))?;
+    let cp = builder.build()?;
+    refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
+    Ok((cp, target, pd))
+}
+
+fn scan() -> BioReadReply {
+    BioReadReply {
+        reader: 0,
+        status: BioStatus::Success,
+        kind: BioType::RightIndexFinger,
+        quality: 90,
+        template: vec![0xB1; 40],
+    }
+}
+
+#[test]
+fn handler_answers_a_biometric_read_inline() -> Result<()> {
+    let (cp, target, pd) = bio_pair()?;
+    pd.set_command_handler(|cmd, reply: &mut Responder<'_>| match cmd {
+        Command::BioRead(read) if read.kind == BioType::RightIndexFinger => {
+            reply.reply(Event::BioRead(scan())).map_err(|_| Nak::Record)
+        }
+        _ => Err(Nak::BioType),
+    });
+    let read = BioReadCommand {
+        reader: 0,
+        kind: BioType::RightIndexFinger,
+        format: BioFormat::AnsiIncits378,
+        quality: 80,
+    };
+    let submission = cp.submit(target, Command::BioRead(read))?;
+    assert_eq!(refresh_until_done(&cp, &pd, &submission), Ok(()));
+    let mut received = None;
+    refresh_until(&cp, &pd, || {
+        received = cp.next_event();
+        received.is_some()
+    });
+    assert_eq!(
+        received,
+        Some((target, CpEvent::Event(Event::BioRead(scan()))))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_biometric_read_is_a_cancellable_operation() -> Result<()> {
+    let (cp, target, _pd) = bio_pair()?;
+    let read = BioReadCommand {
+        reader: 0,
+        kind: BioType::RightIndexFinger,
+        format: BioFormat::AnsiIncits378,
+        quality: 80,
+    };
+    let submission = cp.submit(target, Command::BioRead(read))?;
+    let cancelled = submission.cancel();
+    assert!(
+        matches!(cancelled, Ok(()) | Err(Error::NotInProgress)),
+        "{cancelled:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn biometric_match_of_an_unsupported_type_is_refused() -> Result<()> {
+    let (cp, target, pd) = bio_pair()?;
+    let seen = Arc::new(Mutex::new(None));
+    let sink = seen.clone();
+    pd.set_command_handler(move |cmd, _: &mut Responder<'_>| {
+        *sink.lock().unwrap() = Some(cmd);
+        Err(Nak::BioType)
+    });
+    let request = BioMatchCommand {
+        reader: 0,
+        kind: BioType::LeftRetina,
+        format: BioFormat::NotSpecified,
+        threshold: 200,
+        template: vec![1, 2, 3],
+    };
+    let submission = cp.submit(target, Command::BioMatch(request.clone()))?;
+    assert_eq!(
+        refresh_until_done(&cp, &pd, &submission),
+        Err(CompletionError::Failed)
+    );
+    assert_eq!(*seen.lock().unwrap(), Some(Command::BioMatch(request)));
     Ok(())
 }
 

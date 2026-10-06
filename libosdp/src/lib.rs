@@ -66,6 +66,7 @@
 
 extern crate alloc;
 
+mod bio;
 mod busy;
 mod channel;
 mod commands;
@@ -92,6 +93,9 @@ pub use pdcap::{CapFunction, Capability};
 pub use pdid::*;
 pub use pdinfo::*;
 
+pub use bio::{
+    BioFormat, BioMatchCommand, BioMatchReply, BioReadCommand, BioReadReply, BioStatus, BioType,
+};
 pub use cp::{ControlPanel, ControlPanelBuilder, CpEvent, PdIndex};
 pub use error::{CompletionError, Error, FileError, Nak};
 pub use notification::{MpKind, MpOutcome, MpPhase, Multipart, Notification, TrsSessionStatus};

@@ -8,7 +8,7 @@
 //! etc.,). They do this by creating an "event" and sending it to the CP. This
 //! module is responsible to handling such events though [`Event`].
 
-use crate::{Error, Status};
+use crate::{BioMatchReply, BioReadReply, Error, Status};
 use alloc::vec::Vec;
 
 use super::ConvertEndian;
@@ -332,6 +332,16 @@ pub enum Event {
     /// [`CompletionError::Failed`](crate::CompletionError::Failed)
     MfgError(MfgStatus),
 
+    /// A PD's scan, sent in answer to a
+    /// [`Command::BioRead`](crate::Command::BioRead), inline or on a
+    /// later poll
+    BioRead(BioReadReply),
+
+    /// A PD's match result, sent in answer to a
+    /// [`Command::BioMatch`](crate::Command::BioMatch), inline or on a
+    /// later poll
+    BioMatch(BioMatchReply),
+
     /// A PD's status, reported on a change or in answer to a
     /// [`Command::Status`](crate::Command::Status)
     Status(Status),
@@ -382,6 +392,22 @@ impl TryFrom<Event> for libosdp_sys::osdp_event {
                     mfgerrr: e.try_into()?,
                 },
             },
+            Event::BioRead(e) => libosdp_sys::osdp_event {
+                _node: unsafe { core::mem::zeroed() },
+                type_: libosdp_sys::osdp_event_type_OSDP_EVENT_BIOREADR,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 {
+                    bioreadr: e.try_into()?,
+                },
+            },
+            Event::BioMatch(e) => libosdp_sys::osdp_event {
+                _node: unsafe { core::mem::zeroed() },
+                type_: libosdp_sys::osdp_event_type_OSDP_EVENT_BIOMATCHR,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 {
+                    biomatchr: e.into(),
+                },
+            },
             Event::Status(e) => libosdp_sys::osdp_event {
                 _node: unsafe { core::mem::zeroed() },
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_STATUS,
@@ -418,6 +444,12 @@ impl TryFrom<libosdp_sys::osdp_event> for Event {
             )),
             libosdp_sys::osdp_event_type_OSDP_EVENT_MFGERRR => Ok(Event::MfgError(
                 unsafe { value.__bindgen_anon_1.mfgerrr }.try_into()?,
+            )),
+            libosdp_sys::osdp_event_type_OSDP_EVENT_BIOREADR => Ok(Event::BioRead(
+                unsafe { value.__bindgen_anon_1.bioreadr }.try_into()?,
+            )),
+            libosdp_sys::osdp_event_type_OSDP_EVENT_BIOMATCHR => Ok(Event::BioMatch(
+                unsafe { value.__bindgen_anon_1.biomatchr }.into(),
             )),
             _ => Err(Error::Malformed("event type")),
         }

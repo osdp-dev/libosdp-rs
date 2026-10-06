@@ -61,12 +61,14 @@ impl Submission<'_> {
         self.slot.status.get()
     }
 
-    /// Ask LibOSDP to stop the multi-part operation -- a file transfer --
-    /// that this submission started. The operation ends on a later
-    /// refresh, and the submission with [`CompletionError::Failed`].
+    /// Ask LibOSDP to stop the multi-part operation -- a file transfer or a
+    /// multi-part biometric read -- that this submission started. The
+    /// operation ends on a later refresh, and the submission with
+    /// [`CompletionError::Failed`].
     ///
-    /// Returns [`Error::NotInProgress`] once the operation has ended, and
-    /// [`Error::InvalidArgument`] for a submission that started none.
+    /// Returns [`Error::NotInProgress`] once the operation has ended, and for
+    /// a biometric read that fits one packet; [`Error::InvalidArgument`] for
+    /// a submission that started none.
     pub fn cancel(&self) -> Result<(), Error> {
         let Some(op) = self.operation else {
             return Err(Error::InvalidArgument("not a multi-part operation"));

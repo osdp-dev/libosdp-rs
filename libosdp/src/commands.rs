@@ -7,8 +7,7 @@
 //! are specified by OSDP specification. This module is responsible to handling
 //! such commands though [`Command`].
 
-use crate::Error;
-use crate::StatusKind;
+use crate::{BioMatchCommand, BioReadCommand, Error, StatusKind};
 use alloc::vec::Vec;
 use core::time::Duration;
 
@@ -836,6 +835,14 @@ pub enum Command {
 
     /// Command to query status from the PD
     Status(StatusKind),
+
+    /// Scan a body part and send the scan back; the PD needs the
+    /// biometrics capability
+    BioRead(BioReadCommand),
+
+    /// Scan a body part and match it against a template; the PD needs the
+    /// biometrics capability
+    BioMatch(BioMatchCommand),
 }
 
 impl TryFrom<Command> for libosdp_sys::osdp_cmd {
@@ -913,6 +920,20 @@ impl TryFrom<Command> for libosdp_sys::osdp_cmd {
                 flags: 0,
                 __bindgen_anon_1: libosdp_sys::osdp_cmd__bindgen_ty_1 { status: c.into() },
             },
+            Command::BioRead(c) => libosdp_sys::osdp_cmd {
+                _node: unsafe { core::mem::zeroed() },
+                id: libosdp_sys::osdp_cmd_e_OSDP_CMD_BIOREAD,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_cmd__bindgen_ty_1 { bioread: c.into() },
+            },
+            Command::BioMatch(c) => libosdp_sys::osdp_cmd {
+                _node: unsafe { core::mem::zeroed() },
+                id: libosdp_sys::osdp_cmd_e_OSDP_CMD_BIOMATCH,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_cmd__bindgen_ty_1 {
+                    biomatch: c.try_into()?,
+                },
+            },
         })
     }
 }
@@ -951,6 +972,12 @@ impl TryFrom<libosdp_sys::osdp_cmd> for Command {
             }
             libosdp_sys::osdp_cmd_e_OSDP_CMD_STATUS => Ok(Command::Status(
                 unsafe { value.__bindgen_anon_1.status }.type_.try_into()?,
+            )),
+            libosdp_sys::osdp_cmd_e_OSDP_CMD_BIOREAD => Ok(Command::BioRead(
+                unsafe { value.__bindgen_anon_1.bioread }.into(),
+            )),
+            libosdp_sys::osdp_cmd_e_OSDP_CMD_BIOMATCH => Ok(Command::BioMatch(
+                unsafe { value.__bindgen_anon_1.biomatch }.try_into()?,
             )),
             _ => Err(Error::Malformed("command id")),
         }

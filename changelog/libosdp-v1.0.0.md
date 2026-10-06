@@ -100,6 +100,11 @@ Release subject ## TODO
 - events: Add Event::MfgStatus and Event::MfgError, LibOSDP 4.0's
   manufacturer specific status and error replies. A PD may answer a
   Command::Mfg with either; an error fails the command's Submission
+- bio: Add biometric read and match: Command::BioRead and
+  Command::BioMatch, answered with Event::BioRead and Event::BioMatch,
+  with BioType, BioFormat and BioStatus. A PD refuses a body part or
+  format it cannot scan with Nak::BioType or Nak::BioFormat.
+  Submission::cancel stops a multi-part read
 
 ## Fixes
 

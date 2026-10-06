@@ -209,6 +209,11 @@ impl ControlPanel {
                 pd,
                 kind: MpKind::FileTransfer,
             }),
+            Command::BioRead(_) => Some(Operation {
+                ctx: self.ctx,
+                pd,
+                kind: MpKind::BioRead,
+            }),
             _ => None,
         };
         let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_cmd::try_from(cmd)?);
