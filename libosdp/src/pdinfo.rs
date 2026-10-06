@@ -258,6 +258,19 @@ impl Deref for PdInfoHandle {
     }
 }
 
+/// `caps` as the array LibOSDP reads, which it walks up to a sentinel entry.
+pub(crate) fn terminated_capabilities(
+    caps: impl IntoIterator<Item = libosdp_sys::osdp_pd_cap>,
+) -> Vec<libosdp_sys::osdp_pd_cap> {
+    caps.into_iter()
+        .chain(core::iter::once(libosdp_sys::osdp_pd_cap {
+            function_code: libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SENTINEL,
+            compliance_level: 0,
+            num_items: 0,
+        }))
+        .collect()
+}
+
 impl From<PdInfo> for PdInfoHandle {
     fn from(info: PdInfo) -> PdInfoHandle {
         let scbk = if let Some(key) = info.scbk {
@@ -266,13 +279,7 @@ impl From<PdInfo> for PdInfoHandle {
             core::ptr::null_mut::<u8>()
         };
         let cap = if !info.cap.is_empty() {
-            let mut cap = info.cap.clone();
-            cap.reserve(1);
-            cap.push(libosdp_sys::osdp_pd_cap {
-                function_code: libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SENTINEL,
-                compliance_level: 0,
-                num_items: 0,
-            });
+            let cap = terminated_capabilities(info.cap.iter().copied());
             Box::into_raw(cap.into_boxed_slice()) as *mut _
         } else {
             core::ptr::null_mut::<libosdp_sys::osdp_pd_cap>()
@@ -313,6 +320,28 @@ impl Drop for PdInfoHandle {
             if !info.scbk.is_null() {
                 drop(Box::from_raw(info.scbk as *mut [u8; 16]));
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::terminated_capabilities;
+
+    #[test]
+    fn capability_list_ends_with_the_sentinel() {
+        let led = libosdp_sys::osdp_pd_cap {
+            function_code: libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_READER_LED_CONTROL,
+            compliance_level: 1,
+            num_items: 4,
+        };
+        for caps in [&[][..], &[led][..]] {
+            let raw = terminated_capabilities(caps.iter().copied());
+            assert_eq!(raw.len(), caps.len() + 1);
+            assert_eq!(
+                raw.last().unwrap().function_code,
+                libosdp_sys::osdp_pd_cap_function_code_e_OSDP_PD_CAP_SENTINEL
+            );
         }
     }
 }

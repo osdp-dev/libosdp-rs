@@ -230,6 +230,26 @@ fn pd_capabilities_survive_setup() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn capabilities_set_after_setup_reach_the_cp() -> Result<()> {
+    let (cp_bus, pd_bus) = MemoryChannel::new();
+    let pd = PeripheralDevice::new(pd_info()?, Box::new(pd_bus))?;
+    pd.set_capabilities(&[PdCapability::LedControl(PdCapEntity::new(1, 4))]);
+    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
+    let target = builder.add_pd(pd_info()?)?;
+    let cp = builder.build()?;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !cp.is_online(target) {
+        assert!(Instant::now() < deadline, "PD never came online");
+        cp.refresh();
+        pd.refresh();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let cap = cp.get_capability(target, PdCapability::LedControl(PdCapEntity::new(0, 0)))?;
+    assert_eq!(cap, PdCapability::LedControl(PdCapEntity::new(1, 4)));
+    Ok(())
+}
+
 thread_local! {
     static CP: OnceCell<ControlPanel> = const { OnceCell::new() };
     static PD: OnceCell<PeripheralDevice> = const { OnceCell::new() };

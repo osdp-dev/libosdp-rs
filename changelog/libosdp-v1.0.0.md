@@ -86,6 +86,8 @@ Release subject ## TODO
   buffer (KeySetCommand, MfgCommand, CardRead, KeyPress, MfgReply) with
   Error::Malformed instead of panicking inside LibOSDP's callback, which
   aborted the process
+- pd: End the capability list that set_capabilities hands LibOSDP, which
+  read past its end looking for the terminator
 
 ## Changes
 

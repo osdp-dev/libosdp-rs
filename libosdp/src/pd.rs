@@ -23,7 +23,8 @@ use crate::ffi::{
     log::pd_log_handler,
     submit::{pd_event_complete, RawSubmission},
 };
-use alloc::{boxed::Box, vec::Vec};
+use crate::pdinfo::terminated_capabilities;
+use alloc::boxed::Box;
 use core::{
     cell::{Cell, RefCell},
     marker::PhantomData,
@@ -201,10 +202,7 @@ impl PeripheralDevice {
 
     /// Set a vector of [`PdCapability`] for this PD.
     pub fn set_capabilities(&self, cap: &[PdCapability]) {
-        let cap: Vec<libosdp_sys::osdp_pd_cap> = cap
-            .iter()
-            .map(|c| -> libosdp_sys::osdp_pd_cap { c.clone().into() })
-            .collect();
+        let cap = terminated_capabilities(cap.iter().map(|c| c.clone().into()));
         unsafe { libosdp_sys::osdp_pd_set_capabilities(self.ctx, cap.as_ptr()) }
     }
 
