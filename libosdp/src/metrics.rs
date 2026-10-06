@@ -20,12 +20,16 @@ pub struct Metrics {
     pub check_errors: u32,
     /// NAKs: received from the PD on a CP, sent to the CP on a PD.
     pub naks: u32,
-    /// Secure channel handshakes started: on a CP, when it sends the
-    /// challenge; on a PD, when it receives one.
+    /// Secure channel sessions that became active: on a CP, when it
+    /// accepts the PD's initial R-MAC; on a PD, when it sends it. A
+    /// handshake that never completes is not counted.
     pub sc_handshakes: u32,
-    /// Secure channel handshakes whose cryptogram failed to verify: the
-    /// PD's on a CP, the CP's on a PD. A channel that was up and went
-    /// down is not counted.
+    /// Active secure channel sessions torn down, for any reason: a bad
+    /// MAC, a session timeout, a key change, a link reset, or, on a CP,
+    /// the PD going offline or being disabled. A handshake that never
+    /// completes is not counted. Provisioning a PD from SCBK-D counts two
+    /// handshakes and one failure: the SCBK-D session ends when the new
+    /// key is set.
     pub sc_failures: u32,
     /// Commands: on a CP, sent to the PD; on a PD, handed to the
     /// application and accepted by it.

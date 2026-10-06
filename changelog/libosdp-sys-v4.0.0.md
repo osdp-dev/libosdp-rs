@@ -16,6 +16,31 @@ Release subject ## TODO
 
 ## Changes
 
+- d3f743d api: Say when a multi-part BIOREADR event follows its completion
+- 0efd64a api: Allow registering file ops only before the first refresh
+- b008a19 api: Allow setting callbacks only before the first refresh
+- 3b7ea6e api: Allow setting PD capabilities only before the first refresh
+- dd33aff api: Allow adding PDs only before the first refresh
+- c91b224 trs: Check the PIN encodings when building the frame
+- 11029ec osdp: Reject ASCII card reads at submit
+- 8ba4b4c osdp: Add osdp_get_abi_info()
+- 35d519d cp: Skip copying an empty PD array when adding PDs
+- 61cf148 tests: Resubmit a pooled command from a completion
+- 0dfe51f tests: Serialize API calls with the refresh runners
+- 28cbc72 trs: Refuse an unrepresentable PIN layout at submit
+- 634b612 sc: Count SC activations and tear-downs as documented
+- 3a2afa6 cp: Report an invalid PD index as not enabled
+- bede75e file: Close an empty file the CP refuses to send
+- 907443e api: Refuse reshaping calls during teardown
+- dd9aad5 api: Refuse reshaping calls from flush completions
+- 84e49f2 api: Say a disabled presence scan restores the reader on refresh
+- 9c57cf2 api: Say the channel is closed once per context
+- 85af264 pd: Accept a status reply submitted from the command callback
+- f1b0b43 api: Refuse refresh and reshaping calls from inside callbacks
+- 740de1a cp: Keep engines bound to their PD across osdp_cp_add_pd()
+- 02c088f bio: Deliver a multi-part BIOREADR before completing it
+- b78bbe8 tests: Expect a smartcard reply before its MultipartDone
+- 50c6824 api: Order an engine reply before its completion
 - 12237dd cmake: Let the caller supply the git revision
 - 139984b ci: Publish the ESP-IDF component on release
 - 17fa5b5 esp-idf: Add a component build test

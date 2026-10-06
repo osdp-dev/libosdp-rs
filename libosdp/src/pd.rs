@@ -182,20 +182,23 @@ impl PeripheralDevice {
             }),
             file_ops: None,
         };
-        unsafe {
+        let completions = unsafe {
             libosdp_sys::osdp_pd_set_event_completion_callback(
                 ctx,
                 Some(pd_event_complete),
                 core::ptr::null_mut(),
             )
         };
-        unsafe {
+        let commands = unsafe {
             libosdp_sys::osdp_pd_set_command_callback(
                 ctx,
                 Some(pd_command_trampoline),
                 pd.command_handler.data(),
             )
         };
+        if completions < 0 || commands < 0 {
+            return Err(Error::Setup);
+        }
         if let Some(ops) = file_ops {
             pd.attach_file_ops(ops)?;
         }

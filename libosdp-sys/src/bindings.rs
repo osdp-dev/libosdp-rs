@@ -22,6 +22,9 @@ pub const OSDP_EVENT_KEYPRESS_MAX_DATALEN: u32 = 64;
 pub const OSDP_EVENT_MFGREP_MAX_DATALEN: u32 = 128;
 pub const OSDP_EVENT_MFGSTAT_MAX_DATALEN: u32 = 128;
 pub const OSDP_EVENT_BIOREADR_MAX_TEMPLATE_LEN: u32 = 256;
+pub const OSDP_ABI_OPT_RX_ZERO_COPY: u32 = 1;
+pub const OSDP_ABI_OPT_LOG_MINIMAL: u32 = 2;
+pub const OSDP_ABI_OPT_TRS: u32 = 4;
 #[doc = " Dummy."]
 pub const osdp_pd_cap_function_code_e_OSDP_PD_CAP_UNUSED: osdp_pd_cap_function_code_e = 0;
 #[doc = " This function indicates the ability to monitor the status of a switch\n using a two-wire electrical connection between the PD and the switch.\n The on/off position of the switch indicates the state of an external\n device.\n\n The PD may simply resolve all circuit states to an open/closed\n status, or it may implement supervision of the monitoring circuit. A\n supervised circuit is able to indicate circuit fault status in\n addition to open/closed status."]
@@ -139,7 +142,7 @@ pub type osdp_write_fn_t = ::core::option::Option<
 #[doc = " @brief pointer to function that drops all bytes in TX/RX fifo. This\n function should be non-blocking.\n\n @param data for use by underlying layers. osdp_channel::data is passed"]
 pub type osdp_flush_fn_t =
     ::core::option::Option<unsafe extern "C" fn(data: *mut ::core::ffi::c_void)>;
-#[doc = " @brief pointer to function that closes the underlying channel. This call is\n made when LibOSDP is terminating, once per PD.\n\n @param data for use by underlying layers. osdp_channel::data is passed"]
+#[doc = " @brief pointer to function that closes the underlying channel. This call is\n made once per context, from osdp_cp_teardown() or osdp_pd_teardown(); a CP\n shares one channel among all its PDs.\n\n @param data for use by underlying layers. osdp_channel::data is passed"]
 pub type osdp_close_fn_t =
     ::core::option::Option<unsafe extern "C" fn(data: *mut ::core::ffi::c_void)>;
 #[doc = " @brief User defined communication channel abstraction for OSDP devices.\n The methods for read/write/flush are expected to be non-blocking."]
@@ -257,7 +260,7 @@ pub const osdp_biometric_status_e_OSDP_BIO_STATUS_TIMEOUT: osdp_biometric_status
 pub const osdp_biometric_status_e_OSDP_BIO_STATUS_UNKNOWN_ERROR: osdp_biometric_status_e = 255;
 #[doc = " @brief Outcome of a biometric scan, as reported by the PD."]
 pub type osdp_biometric_status_e = ::core::ffi::c_uchar;
-#[doc = " @brief Command sent from CP to instruct the PD to perform a biometric scan\n and return the scan data in an `OSDP_EVENT_BIOREADR` event.\n\n @note When the reply is multi-part (see @ref OSDP_FLAG_BIOREADR_MULTIPART),\n this command completes once the template has been reassembled, not when its\n first fragment arrives -- unless another feature engine (a file transfer,\n say) is already running an operation on this PD, in which case the command\n completes when the first fragment is accepted, as it does without the flag."]
+#[doc = " @brief Command sent from CP to instruct the PD to perform a biometric scan\n and return the scan data in an `OSDP_EVENT_BIOREADR` event.\n\n @note When the reply is multi-part (see @ref OSDP_FLAG_BIOREADR_MULTIPART),\n this command completes once the template has been reassembled, not when its\n first fragment arrives, and the reassembled `OSDP_EVENT_BIOREADR` reaches\n the event callback before the command completes. The exception is when\n another feature engine (a file transfer, say) is already running an\n operation on this PD: the command then completes when the first fragment is\n accepted, as it does without the flag, and the reassembled event arrives on\n a later poll, after the completion. If that reassembly fails, no event\n follows; its @c OSDP_NOTIFICATION_MP_DONE reports how it ended."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_cmd_bioread {
@@ -696,7 +699,7 @@ pub const osdp_trs_pin_complete_e_OSDP_TRS_PIN_COMPLETE_ON_KEY: osdp_trs_pin_com
 pub const osdp_trs_pin_complete_e_OSDP_TRS_PIN_COMPLETE_ON_TIMEOUT: osdp_trs_pin_complete_e = 4;
 #[doc = " @brief Conditions that end PIN entry; OR them into\n @c osdp_trs_pin_entry::complete_on."]
 pub type osdp_trs_pin_complete_e = ::core::ffi::c_uchar;
-#[doc = " @brief TRS secure PIN entry request: the reader prompts the user for their\n PIN, inserts it into @a apdu as described by the layout fields below, and\n sends the result to the card.\n\n APDU positions are expressed in bits from the start of the APDU payload.\n Not every position is expressible on the wire: it must be byte-aligned (up\n to 120 bits) or fall within the first 15 bits; anything else fails the\n command submission."]
+#[doc = " @brief TRS secure PIN entry request: the reader prompts the user for their\n PIN, inserts it into @a apdu as described by the layout fields below, and\n sends the result to the card.\n\n APDU positions are expressed in bits from the start of the APDU payload.\n Not every position is expressible on the wire: it must be byte-aligned (up\n to 120 bits) or fall within the first 15 bits. A position outside that, a\n PIN-length field over 15 bits or a PIN block over 15 bytes fails the command\n submission."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_trs_pin_entry {
@@ -961,7 +964,7 @@ pub const osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_UNSPECIFIED: osdp_event
     0;
 #[doc = "< Wiegand card format"]
 pub const osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_WIEGAND: osdp_event_cardread_format_e = 1;
-#[doc = "< ASCII card format (deprecated; don't use)"]
+#[doc = " ASCII card format (osdp_FMT). Not supported: osdp_pd_submit_event()\n rejects it and a CP ignores osdp_FMT replies."]
 pub const osdp_event_cardread_format_e_OSDP_CARD_FMT_ASCII: osdp_event_cardread_format_e = 2;
 #[doc = "< Max card format value"]
 pub const osdp_event_cardread_format_e_OSDP_CARD_FMT_SENTINEL: osdp_event_cardread_format_e = 3;
@@ -975,7 +978,7 @@ pub struct osdp_event_cardread {
     pub reader_no: ::core::ffi::c_int,
     #[doc = " Format of the card being read."]
     pub format: osdp_event_cardread_format_e,
-    #[doc = " Direction of data in @a data array.\n - 0 - Forward\n - 1 - Backward"]
+    #[doc = " Read direction (0 forward, 1 reverse). Only osdp_FMT carries it\n (OSDP v2.2 §7.11), which LibOSDP does not support; osdp_RAW has no\n direction. Always 0 on events LibOSDP reports; ignored on submit."]
     pub direction: ::core::ffi::c_int,
     #[doc = " Length of card data in bits. Carried as a 16-bit value on the wire."]
     pub length: u16,
@@ -1119,7 +1122,7 @@ pub union osdp_event__bindgen_ty_1 {
     #[doc = "< Transparent mode reply event structure"]
     pub trs: osdp_trs_reply,
 }
-#[doc = " @brief Callback for PD command notifications. After it has been registered\n with `osdp_pd_set_command_callback`, this method is invoked when the PD\n receives a command from the CP.\n\n @param arg pointer that will was passed to the arg param of\n `osdp_pd_set_command_callback`.\n @param cmd pointer to the received command.\n\n @retval 0 if LibOSDP must send an `osdp_ACK` response.\n @retval -ve if LibOSDP must send an `osdp_NAK` response.\n @retval +ve is reserved.\n\n @note To select the NAK code, return the negated code; only the codes an\n application can know are honoured:\n   - `-OSDP_PD_NAK_BIO_TYPE` - the requested biometric type is not supported\n   - `-OSDP_PD_NAK_BIO_FMT` - the requested biometric format is not supported\n   - `-OSDP_PD_NAK_RECORD` - the command record could not be processed\n Any other -ve value (such as a plain `-1`) sends `OSDP_PD_NAK_RECORD`. The\n remaining NAK codes describe protocol faults that only LibOSDP can detect;\n returning one of them logs a warning and sends `OSDP_PD_NAK_RECORD`.\n\n @note For commands whose reply carries application data - `OSDP_CMD_MFG`,\n `OSDP_CMD_BIOREAD` and `OSDP_CMD_BIOMATCH` - the app submits the reply as an\n event via `osdp_pd_submit_event()`. Submitting it from within this callback\n sends it as the reply to the command itself; submitting it later sends it as\n a poll response and this command is `osdp_ACK`-ed."]
+#[doc = " @brief Callback for PD command notifications. After it has been registered\n with `osdp_pd_set_command_callback`, this method is invoked when the PD\n receives a command from the CP.\n\n @param arg pointer that will was passed to the arg param of\n `osdp_pd_set_command_callback`.\n @param cmd pointer to the received command.\n\n @retval 0 if LibOSDP must send an `osdp_ACK` response.\n @retval -ve if LibOSDP must send an `osdp_NAK` response.\n @retval +ve is reserved.\n\n @note To select the NAK code, return the negated code; only the codes an\n application can know are honoured:\n   - `-OSDP_PD_NAK_BIO_TYPE` - the requested biometric type is not supported\n   - `-OSDP_PD_NAK_BIO_FMT` - the requested biometric format is not supported\n   - `-OSDP_PD_NAK_RECORD` - the command record could not be processed\n Any other -ve value (such as a plain `-1`) sends `OSDP_PD_NAK_RECORD`. The\n remaining NAK codes describe protocol faults that only LibOSDP can detect;\n returning one of them logs a warning and sends `OSDP_PD_NAK_RECORD`.\n\n @note For commands whose reply carries application data - `OSDP_CMD_MFG`,\n `OSDP_CMD_BIOREAD` and `OSDP_CMD_BIOMATCH` - the app submits the reply as an\n event via `osdp_pd_submit_event()`. Submitting it from within this callback\n sends it as the reply to the command itself; submitting it later sends it as\n a poll response and this command is `osdp_ACK`-ed.\n\n @note `OSDP_CMD_STATUS` is answered the same way: submit an\n `OSDP_EVENT_STATUS` of the queried type from within this callback, which\n also lets `osdp_pd_submit_event()` refuse a report whose entry count does not\n match the PD's capability. An app may instead fill in `cmd->status` before\n returning; that report is sent when no status event was submitted."]
 pub type pd_command_callback_t = ::core::option::Option<
     unsafe extern "C" fn(arg: *mut ::core::ffi::c_void, cmd: *mut osdp_cmd) -> ::core::ffi::c_int,
 >;
@@ -1163,7 +1166,7 @@ unsafe extern "C" {
     pub fn osdp_pd_setup(channel: *mut osdp_channel, info: *const osdp_pd_info_t) -> *mut osdp_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context\n\n @note LibOSDP is not internally synchronized. All API calls against one\n context -- submissions, flushes, teardown, and this refresh -- must be\n serialized by the caller: either make every call from one thread, or hold\n one lock across every call (the bundled python binding does the latter).\n The submit APIs enqueue into unlocked intrusive lists that this call\n consumes; concurrent unserialized access corrupts them. The read-only\n getters are exempt: osdp_get_status_mask(), osdp_get_sc_status_mask(),\n osdp_cp_get_pd_id() and osdp_get_file_tx_status() mutate nothing and may be\n called concurrently -- see their notes."]
+    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context\n\n @note LibOSDP is not internally synchronized. All API calls against one\n context -- submissions, flushes, teardown, and this refresh -- must be\n serialized by the caller: either make every call from one thread, or hold\n one lock across every call (the bundled python binding does the latter).\n The submit APIs enqueue into unlocked intrusive lists that this call\n consumes; concurrent unserialized access corrupts them. The read-only\n getters are exempt: osdp_get_status_mask(), osdp_get_sc_status_mask(),\n osdp_cp_get_pd_id() and osdp_get_file_tx_status() mutate nothing and may be\n called concurrently -- see their notes.\n\n @note LibOSDP runs the application's callbacks -- channel, file ops,\n command, event, completion and log -- from inside osdp_cp_refresh(),\n osdp_pd_refresh(), the flush calls, teardown, and osdp_cp_submit_command()\n (which opens the file of an OSDP_CMD_FILE_TX it starts). From inside a\n callback, an application may submit, flush, cancel and query the context the\n callback belongs to. LibOSDP refuses the calls that would pull the context\n out from under the code that ran the callback: a nested refresh returns\n without doing anything, and osdp_file_register_ops() and osdp_cp_add_pd()\n fail. While teardown runs, the submit, flush and cancel calls and those two\n fail too, and a refresh does nothing. osdp_cp_teardown() and\n osdp_pd_teardown() must not be called from inside a callback of the context\n they tear down -- they free it under the code that ran the callback -- except\n from a completion that teardown itself fired, where the call does nothing."]
     pub fn osdp_pd_refresh(ctx: *mut osdp_t);
 }
 unsafe extern "C" {
@@ -1171,27 +1174,30 @@ unsafe extern "C" {
     pub fn osdp_pd_teardown(ctx: *mut osdp_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Set PD's capabilities\n\n @param ctx OSDP context\n @param cap pointer to array of cap (`struct osdp_pd_cap`) terminated by a\n capability with cap->function_code set to OSDP_PD_CAP_SENTINEL."]
-    pub fn osdp_pd_set_capabilities(ctx: *mut osdp_t, cap: *const osdp_pd_cap);
+    #[doc = " @brief Set PD's capabilities\n\n Setup only: call it before the first osdp_pd_refresh(); it returns -1\n afterwards, as a CP may already have read the capabilities.\n\n @param ctx OSDP context\n @param cap pointer to array of cap (`struct osdp_pd_cap`) terminated by a\n capability with cap->function_code set to OSDP_PD_CAP_SENTINEL.\n\n @retval 0 on success\n @retval -1 when called after the first osdp_pd_refresh()"]
+    pub fn osdp_pd_set_capabilities(
+        ctx: *mut osdp_t,
+        cap: *const osdp_pd_cap,
+    ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Set callback method for PD command notification. This callback is\n invoked when the PD receives a command from the CP.\n\n @param ctx OSDP context\n @param cb The callback function's pointer\n @param arg A pointer that will be passed as the first argument of `cb`"]
+    #[doc = " @brief Set callback method for PD command notification. This callback is\n invoked when the PD receives a command from the CP.\n\n Setup only: call it before the first osdp_pd_refresh(); it returns -1\n afterwards.\n\n @param ctx OSDP context\n @param cb The callback function's pointer\n @param arg A pointer that will be passed as the first argument of `cb`\n\n @retval 0 on success\n @retval -1 when called after the first osdp_pd_refresh()"]
     pub fn osdp_pd_set_command_callback(
         ctx: *mut osdp_t,
         cb: pd_command_callback_t,
         arg: *mut ::core::ffi::c_void,
-    );
+    ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Set callback method for PD event completion.\n\n @param ctx OSDP context\n @param cb Callback function pointer\n @param arg Opaque pointer passed as first callback argument\n\n @note Clearing this callback (passing NULL) while events are still queued\n or in flight orphans them: their completions are dropped and the\n application never gets them back. Unregister only after\n osdp_pd_flush_events() or osdp_pd_teardown() has drained them."]
+    #[doc = " @brief Set callback method for PD event completion.\n\n Setup only: call it before the first osdp_pd_refresh(); it returns -1\n afterwards.\n\n @param ctx OSDP context\n @param cb Callback function pointer\n @param arg Opaque pointer passed as first callback argument\n\n @retval 0 on success\n @retval -1 when called after the first osdp_pd_refresh()\n\n @note Clearing this callback (passing NULL) while events are still queued\n orphans them: their completions are dropped and the application never gets\n them back. Unregister only after osdp_pd_flush_events() has drained them."]
     pub fn osdp_pd_set_event_completion_callback(
         ctx: *mut osdp_t,
         cb: pd_event_completion_callback_t,
         arg: *mut ::core::ffi::c_void,
-    );
+    ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Submit PD events to CP. These events are delivered to the CP as a\n response to a future POLL command. A successful return does not mean CP\n received it, it only means LibOSDP accepted this submission.\n\n @param ctx OSDP context\n @param event pointer to event struct. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note An accepted event is queued @b by @b reference; LibOSDP does not copy\n it. @a event must stay alive and unmodified from a successful submission until\n the library is done with it -- an event that lives on the stack of a function\n that returns (a command callback, say), or one reused for a second submission\n while the first is still queued, corrupts the queue. Ownership returns to the\n application when the event completion callback fires for that pointer (see\n osdp_pd_set_event_completion_callback()); every accepted event is reported\n exactly once, including those dropped by osdp_pd_flush_events()\n (@c OSDP_COMPLETION_FLUSHED) and osdp_pd_teardown() (@c OSDP_COMPLETION_ABORTED).\n That callback is where a heap-allocated event should be freed. On a -1 return\n the event was never queued and is the application's to reuse at once.\n\n @note Submission fails unless a completion callback is registered (see\n osdp_pd_set_event_completion_callback()) -- the completion callback is how\n ownership of the submitted event returns to the application."]
+    #[doc = " @brief Submit PD events to CP. These events are delivered to the CP as a\n response to a future POLL command. A successful return does not mean CP\n received it, it only means LibOSDP accepted this submission.\n\n @param ctx OSDP context\n @param event pointer to event struct. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note An accepted event is queued @b by @b reference; LibOSDP does not copy\n it. @a event must stay alive and unmodified from a successful submission until\n the library is done with it -- an event that lives on the stack of a function\n that returns (a command callback, say), or one reused for a second submission\n while the first is still queued, corrupts the queue. Ownership returns to the\n application when the event completion callback fires for that pointer (see\n osdp_pd_set_event_completion_callback()); every accepted event is reported\n exactly once, including those dropped by osdp_pd_flush_events()\n (@c OSDP_COMPLETION_FLUSHED) and osdp_pd_teardown() (@c OSDP_COMPLETION_ABORTED).\n That callback is where a heap-allocated event should be freed. On a -1 return\n the event was never queued and is the application's to reuse at once.\n\n @note Submission fails unless a completion callback is registered (see\n osdp_pd_set_event_completion_callback()) -- the completion callback is how\n ownership of the submitted event returns to the application.\n\n @note A card read in any format other than @c OSDP_CARD_FMT_RAW_UNSPECIFIED\n or @c OSDP_CARD_FMT_RAW_WIEGAND is rejected; LibOSDP does not support\n osdp_FMT."]
     pub fn osdp_pd_submit_event(ctx: *mut osdp_t, event: *const osdp_event) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1207,7 +1213,7 @@ unsafe extern "C" {
     ) -> *mut osdp_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Adds more PD devices in the CP control list.\n\n @param ctx OSDP context\n @param num_pd Number of PDs connected to this CP. The `osdp_pd_info_t *` is\n treated as an array of length num_pd.\n @param info Pointer to info struct populated by application.\n\n @retval 0 on success\n @retval -1 on failure"]
+    #[doc = " @brief Adds more PD devices in the CP control list.\n\n This is part of setting up the CP: call it after osdp_cp_setup() and before\n the first osdp_cp_refresh(). Once the CP has been refreshed, its PD list is\n fixed and this call fails; use osdp_cp_disable_pd() and osdp_cp_enable_pd()\n to take PDs out of service and bring them back at runtime.\n\n @param ctx OSDP context\n @param num_pd Number of PDs connected to this CP. The `osdp_pd_info_t *` is\n treated as an array of length num_pd.\n @param info Pointer to info struct populated by application.\n\n @retval 0 on success\n @retval -1 on failure, including when called after the first\n osdp_cp_refresh(), from inside one of this context's callbacks or during its\n teardown (see osdp_cp_refresh())"]
     pub fn osdp_cp_add_pd(
         ctx: *mut osdp_t,
         num_pd: ::core::ffi::c_int,
@@ -1215,7 +1221,7 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context\n\n @note LibOSDP is not internally synchronized. All API calls against one\n context -- submissions, flushes, teardown, and this refresh -- must be\n serialized by the caller: either make every call from one thread, or hold\n one lock across every call (the bundled python binding does the latter).\n The submit APIs enqueue into unlocked intrusive lists that this call\n consumes; concurrent unserialized access corrupts them. The read-only\n getters are exempt: osdp_get_status_mask(), osdp_get_sc_status_mask(),\n osdp_cp_get_pd_id() and osdp_get_file_tx_status() mutate nothing and may be\n called concurrently -- see their notes."]
+    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context\n\n @note LibOSDP is not internally synchronized. All API calls against one\n context -- submissions, flushes, teardown, and this refresh -- must be\n serialized by the caller: either make every call from one thread, or hold\n one lock across every call (the bundled python binding does the latter).\n The submit APIs enqueue into unlocked intrusive lists that this call\n consumes; concurrent unserialized access corrupts them. The read-only\n getters are exempt: osdp_get_status_mask(), osdp_get_sc_status_mask(),\n osdp_cp_get_pd_id() and osdp_get_file_tx_status() mutate nothing and may be\n called concurrently -- see their notes.\n\n @note LibOSDP runs the application's callbacks -- channel, file ops,\n command, event, completion and log -- from inside osdp_cp_refresh(),\n osdp_pd_refresh(), the flush calls, teardown, and osdp_cp_submit_command()\n (which opens the file of an OSDP_CMD_FILE_TX it starts). From inside a\n callback, an application may submit, flush, cancel and query the context the\n callback belongs to. LibOSDP refuses the calls that would pull the context\n out from under the code that ran the callback: a nested refresh returns\n without doing anything, and osdp_file_register_ops() and osdp_cp_add_pd()\n fail. While teardown runs, the submit, flush and cancel calls and those two\n fail too, and a refresh does nothing. osdp_cp_teardown() and\n osdp_pd_teardown() must not be called from inside a callback of the context\n they tear down -- they free it under the code that ran the callback -- except\n from a completion that teardown itself fired, where the call does nothing."]
     pub fn osdp_cp_refresh(ctx: *mut osdp_t);
 }
 unsafe extern "C" {
@@ -1223,7 +1229,7 @@ unsafe extern "C" {
     pub fn osdp_cp_teardown(ctx: *mut osdp_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Submit CP commands to PD. These commands are queued to be sent to the\n PD at the next available opportunity. A successful return does not mean PD\n received it, it only means LibOSDP accepted this submission.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param cmd command pointer. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note This method only adds the command on to a particular PD's command\n queue. The command itself can fail due to various reasons.\n\n @note An accepted command is queued @b by @b reference; LibOSDP does not copy\n it. @a cmd must stay alive and unmodified from a successful submission until\n the library is done with it -- a command that lives on the stack of a function\n that returns, or one reused for a second submission while the first is still\n queued, corrupts the queue. Ownership returns to the application when the\n command completion callback fires for that pointer (see\n osdp_cp_set_command_completion_callback()); every accepted command is reported\n exactly once, including those dropped by osdp_cp_flush_commands()\n (@c OSDP_COMPLETION_FLUSHED) and osdp_cp_teardown() (@c OSDP_COMPLETION_ABORTED).\n That callback is where a heap-allocated command should be freed. On a -1\n return the command was never queued and is the application's to reuse at once.\n\n @note OSDP_CMD_FILE_TX, OSDP_CMD_PIVDATA, OSDP_CMD_GENAUTH and\n OSDP_CMD_CRAUTH do not ride the command queue; a feature engine runs them\n across many exchanges. The completion callback fires when the operation\n ends, not when it is accepted, so @a cmd must stay alive for the whole\n operation. Progress is reported meanwhile by the OSDP_NOTIFICATION_MP_*\n notifications, and osdp_cp_cancel() asks such an operation to stop early.\n\n @note Submission fails unless a completion callback is registered (see\n osdp_cp_set_command_completion_callback()) -- the completion callback is\n how ownership of the submitted command returns to the application.\n\n @note Submission is accepted only while the PD is ONLINE; expect and handle\n the -1 path. Once accepted, a command survives a link outage: it stays\n queued while the PD is offline and executes after the PD reconnects,\n however much later that is. If stale delivery is worse than no delivery\n (LED/buzzer feedback, say), call osdp_cp_flush_commands() when the PD goes\n offline (see @ref OSDP_NOTIFICATION_PD_STATUS)."]
+    #[doc = " @brief Submit CP commands to PD. These commands are queued to be sent to the\n PD at the next available opportunity. A successful return does not mean PD\n received it, it only means LibOSDP accepted this submission.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param cmd command pointer. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note This method only adds the command on to a particular PD's command\n queue. The command itself can fail due to various reasons.\n\n @note An accepted command is queued @b by @b reference; LibOSDP does not copy\n it. @a cmd must stay alive and unmodified from a successful submission until\n the library is done with it -- a command that lives on the stack of a function\n that returns, or one reused for a second submission while the first is still\n queued, corrupts the queue. Ownership returns to the application when the\n command completion callback fires for that pointer (see\n osdp_cp_set_command_completion_callback()); every accepted command is reported\n exactly once, including those dropped by osdp_cp_flush_commands()\n (@c OSDP_COMPLETION_FLUSHED) and osdp_cp_teardown() (@c OSDP_COMPLETION_ABORTED).\n That callback is where a heap-allocated command should be freed. On a -1\n return the command was never queued and is the application's to reuse at once.\n\n @note OSDP_CMD_FILE_TX, OSDP_CMD_PIVDATA, OSDP_CMD_GENAUTH and\n OSDP_CMD_CRAUTH do not ride the command queue; a feature engine runs them\n across many exchanges. The completion callback fires when the operation\n ends, not when it is accepted, so @a cmd must stay alive for the whole\n operation. Progress is reported meanwhile by the OSDP_NOTIFICATION_MP_*\n notifications, and osdp_cp_cancel() asks such an operation to stop early.\n For OSDP_CMD_PIVDATA, OSDP_CMD_GENAUTH and OSDP_CMD_CRAUTH the reply event\n (OSDP_EVENT_PIVDATAR, OSDP_EVENT_GENAUTHR, OSDP_EVENT_CRAUTHR) reaches the\n event callback before the command completes with OSDP_COMPLETION_OK, and\n only one such operation runs per PD at a time (OSDP v2.2 §5.10.2): a second\n submission while one is running fails, including from within the reply event\n callback.\n\n @note Submission fails unless a completion callback is registered (see\n osdp_cp_set_command_completion_callback()) -- the completion callback is\n how ownership of the submitted command returns to the application.\n\n @note Submission is accepted only while the PD is ONLINE; expect and handle\n the -1 path. Once accepted, a command survives a link outage: it stays\n queued while the PD is offline and executes after the PD reconnects,\n however much later that is. If stale delivery is worse than no delivery\n (LED/buzzer feedback, say), call osdp_cp_flush_commands() when the PD goes\n offline (see @ref OSDP_NOTIFICATION_PD_STATUS)."]
     pub fn osdp_cp_submit_command(
         ctx: *mut osdp_t,
         pd: ::core::ffi::c_int,
@@ -1251,7 +1257,7 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Disable the background card presence scan on a PD. If a probe is\n in flight, the reader is restored to its default mode first.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n\n @retval 0 on success\n @retval -1 on failure (TRS support not compiled in, or bad args)"]
+    #[doc = " @brief Disable the background card presence scan on a PD. If a probe is\n in flight, the reader returns to its default mode on the next refresh.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n\n @retval 0 on success\n @retval -1 on failure (TRS support not compiled in, or bad args)"]
     pub fn osdp_cp_trs_scan_disable(ctx: *mut osdp_t, pd: ::core::ffi::c_int)
     -> ::core::ffi::c_int;
 }
@@ -1279,20 +1285,20 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Set callback method for CP event notification. This callback is\n invoked when the CP receives an event from the PD.\n\n @param ctx OSDP context\n @param cb The callback function's pointer\n @param arg A pointer that will be passed as the first argument of `cb`"]
+    #[doc = " @brief Set callback method for CP event notification. This callback is\n invoked when the CP receives an event from the PD.\n\n Setup only: call it before the first osdp_cp_refresh(); it returns -1\n afterwards.\n\n @param ctx OSDP context\n @param cb The callback function's pointer\n @param arg A pointer that will be passed as the first argument of `cb`\n\n @retval 0 on success\n @retval -1 when called after the first osdp_cp_refresh()"]
     pub fn osdp_cp_set_event_callback(
         ctx: *mut osdp_t,
         cb: cp_event_callback_t,
         arg: *mut ::core::ffi::c_void,
-    );
+    ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Set callback method for CP command completion.\n\n @param ctx OSDP context\n @param cb Callback function pointer\n @param arg Opaque pointer passed as first callback argument\n\n @note Clearing this callback (passing NULL) while commands are still queued\n or in flight orphans them: their completions are dropped and the\n application never gets them back. Unregister only after\n osdp_cp_flush_commands() or osdp_cp_teardown() has drained them."]
+    #[doc = " @brief Set callback method for CP command completion.\n\n Setup only: call it before the first osdp_cp_refresh(); it returns -1\n afterwards.\n\n @param ctx OSDP context\n @param cb Callback function pointer\n @param arg Opaque pointer passed as first callback argument\n\n @retval 0 on success\n @retval -1 when called after the first osdp_cp_refresh()"]
     pub fn osdp_cp_set_command_completion_callback(
         ctx: *mut osdp_t,
         cb: cp_command_completion_callback_t,
         arg: *mut ::core::ffi::c_void,
-    );
+    ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Set or clear OSDP public flags\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param flags One or more of @ref OSDP_FLAG_ENFORCE_SECURE,\n @ref OSDP_FLAG_IGN_UNSOLICITED, @ref OSDP_FLAG_ENABLE_NOTIFICATION and\n @ref OSDP_FLAG_ALLOW_EMPTY_ENCRYPTED_DATA_BLOCK. Any other bit causes this\n method to fail; the remaining flags describe how a device was set up and\n cannot be re-decided on a live link.\n @param do_set when true: set `flags` in ctx; when false: clear `flags` in ctx\n\n @retval 0 on success\n @retval -1 on failure\n\n @note @ref OSDP_FLAG_ENFORCE_SECURE is a one-way latch: it can be set on a\n running link but not cleared, and not set at all on a PD that was configured\n without an SCBK. Nothing is applied when the call fails, so a request that\n mixes an allowed flag with a refused one leaves every flag as it was."]
@@ -1369,6 +1375,27 @@ unsafe extern "C" {
     #[doc = " @brief Get LibOSDP source identifier as a `const char *`. This string has\n info about the source tree from which this version of LibOSDP was built.\n Used in diagnostics.\n\n @retval source identifier string"]
     pub fn osdp_get_source_info() -> *const ::core::ffi::c_char;
 }
+#[doc = " @brief Binary interface of a LibOSDP build.\n\n Build options change the size of public structures (the `*_MAX_LEN`\n defaults) and their members (OPT_OSDP_RX_ZERO_COPY). Bindings that mirror\n these structures in another language compare this against their own layout\n before calling into the library.\n\n Fields are only ever appended. The caller sets @ref osdp_abi_info::size to\n the size it was compiled against; LibOSDP fills in at most that many bytes\n and writes back how many it filled, so an older caller is never overrun.\n Callers must set `size` to at least `sizeof(uint32_t)`; smaller values\n leave the struct partly or wholly unwritten.\n\n The sizes are a layout fingerprint for the shipped option set, not a proof\n that every `*_MAX_LEN` matches."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct osdp_abi_info {
+    #[doc = "< In: caller's sizeof(struct osdp_abi_info); out: bytes filled"]
+    pub size: u32,
+    #[doc = "< OR of the OSDP_ABI_OPT_* bits"]
+    pub options: u32,
+    #[doc = "< sizeof(struct osdp_cmd)"]
+    pub sizeof_cmd: u32,
+    #[doc = "< sizeof(struct osdp_event)"]
+    pub sizeof_event: u32,
+    #[doc = "< sizeof(struct osdp_channel)"]
+    pub sizeof_channel: u32,
+    #[doc = "< sizeof(osdp_pd_info_t)"]
+    pub sizeof_pd_info: u32,
+}
+unsafe extern "C" {
+    #[doc = " @brief Describe the binary interface of this LibOSDP build.\n\n @param info caller sets info->size first; filled with this build's\n             structure sizes and options, up to info->size bytes"]
+    pub fn osdp_get_abi_info(info: *mut osdp_abi_info);
+}
 unsafe extern "C" {
     #[doc = " @brief Get a bit mask of number of PD that are online currently.\n\n @param ctx OSDP context\n @param bitmask pointer to an array of bytes. must be as large as\n (num_pds + 7 / 8).\n\n @note Unlike the rest of the API, this samples per-PD state and writes only\n to @a bitmask; it mutates nothing. It is therefore exempt from the\n serialization rule documented on osdp_cp_refresh(): it may be called\n concurrently with the refresh loop, and the answer is at worst one refresh\n out of date."]
     pub fn osdp_get_status_mask(ctx: *const osdp_t, bitmask: *mut u8);
@@ -1389,9 +1416,9 @@ pub struct osdp_metrics {
     pub packet_check_errors: u32,
     #[doc = " REPLY_NAK packets observed on this context. On a PD-mode\n context these are NAKs transmitted; on a CP-mode context\n these are NAKs received. Direction is implicit from the role."]
     pub nak_count: u32,
-    #[doc = " Successful secure-channel activations (post-SCRYPT)."]
+    #[doc = " Successful secure-channel activations: counted when the session\n becomes active (post-SCRYPT, on the RMAC_I a PD sends and a CP\n accepts), not when a handshake starts."]
     pub sc_handshake_count: u32,
-    #[doc = " Secure-channel tear-downs of a previously active session."]
+    #[doc = " Secure-channel tear-downs of a previously active session, for any\n reason: a bad MAC, a session timeout, a key change, a link reset,\n or, on a CP, the PD going offline or being disabled. A handshake\n that never completes counts in neither field."]
     pub sc_failure_count: u32,
     #[doc = " Commands processed at the application callback boundary."]
     pub command_count: u32,
@@ -1462,7 +1489,7 @@ pub struct osdp_file_ops {
     pub finalize: osdp_file_finalize_fn_t,
 }
 unsafe extern "C" {
-    #[doc = " @brief Register a global file operations struct with OSDP. Both CP and PD\n modes should have done so already before CP can sending a OSDP_CMD_FILE_TX.\n\n @param ctx OSDP context\n @param pd PD number in case of CP. This param is ignored in PD mode\n @param ops Populated file operations struct\n\n @retval 0 on success. -1 on errors."]
+    #[doc = " @brief Register a global file operations struct with OSDP. Both CP and PD\n modes should have done so already before CP can sending a OSDP_CMD_FILE_TX.\n\n Setup only: call it before the first osdp_cp_refresh() or osdp_pd_refresh();\n it returns -1 afterwards. Swap files from inside the registered ops instead,\n keyed on the file ID that open() receives.\n\n @param ctx OSDP context\n @param pd PD number in case of CP. This param is ignored in PD mode\n @param ops Populated file operations struct\n\n @retval 0 on success. -1 on errors, including when called after the first\n refresh, from inside one of this context's callbacks or during its teardown\n (see osdp_cp_refresh())."]
     pub fn osdp_file_register_ops(
         ctx: *mut osdp_t,
         pd: ::core::ffi::c_int,

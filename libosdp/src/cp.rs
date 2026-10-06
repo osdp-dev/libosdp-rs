@@ -138,20 +138,23 @@ impl ControlPanelBuilder {
             events: Shared::new(CpEventQueue::new(self.event_queue_capacity)),
             file_ops: Vec::new(),
         };
-        unsafe {
+        let completions = unsafe {
             libosdp_sys::osdp_cp_set_command_completion_callback(
                 ctx,
                 Some(cp_command_complete),
                 core::ptr::null_mut(),
             )
         };
-        unsafe {
+        let events = unsafe {
             libosdp_sys::osdp_cp_set_event_callback(
                 ctx,
                 Some(cp_event_trampoline),
                 cp.events.data(),
             )
         };
+        if completions < 0 || events < 0 {
+            return Err(Error::Setup);
+        }
         for (pd, ops) in file_ops {
             cp.attach_file_ops(pd, ops)?;
         }
