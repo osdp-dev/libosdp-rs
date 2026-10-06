@@ -74,6 +74,18 @@ pub enum MpOutcome {
     Invalid,
 }
 
+impl From<MpOutcome> for libosdp_sys::osdp_mp_outcome {
+    fn from(value: MpOutcome) -> Self {
+        match value {
+            MpOutcome::Ok => libosdp_sys::osdp_mp_outcome_OSDP_MP_OUTCOME_OK,
+            MpOutcome::OkRebooting => libosdp_sys::osdp_mp_outcome_OSDP_MP_OUTCOME_OK_REBOOTING,
+            MpOutcome::Aborted => libosdp_sys::osdp_mp_outcome_OSDP_MP_OUTCOME_ABORTED,
+            MpOutcome::Unrecognized => libosdp_sys::osdp_mp_outcome_OSDP_MP_OUTCOME_UNRECOGNIZED,
+            MpOutcome::Invalid => libosdp_sys::osdp_mp_outcome_OSDP_MP_OUTCOME_INVALID,
+        }
+    }
+}
+
 impl TryFrom<libosdp_sys::osdp_mp_outcome> for MpOutcome {
     type Error = Error;
 

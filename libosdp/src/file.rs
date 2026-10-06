@@ -6,6 +6,9 @@
 //! OSDP provides a means to send files from CP to a Peripheral Device (PD).
 //! This module adds the required components to achieve this effect.
 
+use crate::MpOutcome;
+use core::time::Duration;
+
 type Result<T> = core::result::Result<T, crate::FileError>;
 
 /// How far a file transfer has got.
@@ -29,6 +32,22 @@ pub enum OpenMode {
     Write {
         /// Size of the incoming file, as the CP announced it.
         size: u32,
+    },
+}
+
+/// Whether a PD has finished with a file it received.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Finalize {
+    /// Finished, with this outcome for the CP.
+    Done(MpOutcome),
+    /// Still working -- verifying or installing the file, say. The CP is
+    /// asked to check back after `retry_after`, a hint carried in whole
+    /// milliseconds up to 65.535 s, and [`FileOps::finalize`] is called
+    /// again then.
+    Pending {
+        /// How long the CP should wait before asking again.
+        retry_after: Duration,
     },
 }
 
@@ -76,4 +95,17 @@ pub trait FileOps: Send {
 
     /// Close the open file.
     fn close(&mut self) -> Result<()>;
+
+    /// Decide how a received transfer ends; PD only. Called once the last
+    /// byte has been written, and again while it returns
+    /// [`Finalize::Pending`], each time from inside
+    /// [`PeripheralDevice::refresh`](crate::PeripheralDevice::refresh), so
+    /// it must return promptly: do long work elsewhere and report here
+    /// whether it is done. While it is pending, a CP that missed a reply
+    /// may send its last chunk again, and [`FileOps::write`] gets it again.
+    ///
+    /// By default, the transfer ends at once with [`MpOutcome::Ok`].
+    fn finalize(&mut self) -> Finalize {
+        Finalize::Done(MpOutcome::Ok)
+    }
 }

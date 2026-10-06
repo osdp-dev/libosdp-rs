@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{FileOps, OpenMode};
+use crate::{FileOps, Finalize, OpenMode};
 use alloc::boxed::Box;
 use core::ffi::c_void;
 #[cfg(feature = "defmt")]
@@ -122,6 +122,28 @@ unsafe extern "C" fn file_close(data: *mut c_void) -> i32 {
     }
 }
 
+unsafe extern "C" fn file_finalize(
+    data: *mut c_void,
+    outcome: *mut libosdp_sys::osdp_mp_outcome,
+    delay_ms: *mut u16,
+) -> bool {
+    if outcome.is_null() || delay_ms.is_null() {
+        return true;
+    }
+    let arg = unsafe { file_ops_arg(data) };
+    match arg.ops.finalize() {
+        Finalize::Done(done) => {
+            unsafe { *outcome = done.into() };
+            true
+        }
+        Finalize::Pending { retry_after } => {
+            let millis = u16::try_from(retry_after.as_millis()).unwrap_or(u16::MAX);
+            unsafe { *delay_ms = millis };
+            false
+        }
+    }
+}
+
 /// File ops whose box is shared with LibOSDP; freed when this is dropped,
 /// which must happen only after LibOSDP stops using it.
 pub(crate) struct OwnedFileOps(*mut FileOpsArg);
@@ -145,7 +167,10 @@ impl OwnedFileOps {
             read: Some(file_read),
             write: Some(file_write),
             close: Some(file_close),
-            finalize: None,
+            finalize: match unsafe { &*self.0 }.role {
+                FileRole::Sender => None,
+                FileRole::Receiver => Some(file_finalize),
+            },
         }
     }
 }
@@ -269,5 +294,63 @@ mod tests {
         let ops = owned(Scripted::default(), FileRole::Receiver);
         let rc = unsafe { file_write(ops.data(), core::ptr::null(), 8u32, 0u32) };
         assert_eq!(rc, -1);
+    }
+
+    struct Finalizing(Finalize);
+
+    impl FileOps for Finalizing {
+        fn open(&mut self, _: i32, _: OpenMode) -> core::result::Result<u32, FileError> {
+            Ok(0)
+        }
+        fn read(&mut self, _: &mut [u8], _: u32) -> core::result::Result<usize, FileError> {
+            Ok(0)
+        }
+        fn write(&mut self, buf: &[u8], _: u32) -> core::result::Result<usize, FileError> {
+            Ok(buf.len())
+        }
+        fn close(&mut self) -> core::result::Result<(), FileError> {
+            Ok(())
+        }
+        fn finalize(&mut self) -> Finalize {
+            self.0
+        }
+    }
+
+    #[test]
+    fn finalize_reports_the_outcome_or_asks_again_later() {
+        let mut outcome = libosdp_sys::osdp_mp_outcome_OSDP_MP_OUTCOME_OK;
+        let mut delay = 0u16;
+        let done = OwnedFileOps::new(
+            Box::new(Finalizing(Finalize::Done(crate::MpOutcome::Invalid))),
+            FileRole::Receiver,
+        );
+        assert!(unsafe { file_finalize(done.data(), &mut outcome, &mut delay) });
+        assert_eq!(
+            outcome,
+            libosdp_sys::osdp_mp_outcome_OSDP_MP_OUTCOME_INVALID
+        );
+
+        let pending = OwnedFileOps::new(
+            Box::new(Finalizing(Finalize::Pending {
+                retry_after: core::time::Duration::from_secs(70),
+            })),
+            FileRole::Receiver,
+        );
+        assert!(!unsafe { file_finalize(pending.data(), &mut outcome, &mut delay) });
+        assert_eq!(delay, u16::MAX);
+    }
+
+    #[test]
+    fn only_a_receiver_is_asked_to_finalize() {
+        let sender = OwnedFileOps::new(
+            Box::new(Finalizing(Finalize::Done(crate::MpOutcome::Ok))),
+            FileRole::Sender,
+        );
+        assert!(sender.as_raw().finalize.is_none());
+        let receiver = OwnedFileOps::new(
+            Box::new(Finalizing(Finalize::Done(crate::MpOutcome::Ok))),
+            FileRole::Receiver,
+        );
+        assert!(receiver.as_raw().finalize.is_some());
     }
 }

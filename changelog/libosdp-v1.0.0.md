@@ -93,6 +93,10 @@ Release subject ## TODO
   Flag::EnableNotification set. A CP hands them over through next_event
   as CpEvent::Notification, a PD through next_notification; until now a
   PD refused them as unknown commands
+- file: Let a PD decide how a received transfer ends with
+  FileOps::finalize, which reports Finalize::Done with an MpOutcome, or
+  Finalize::Pending while it verifies or installs the file. The default
+  ends the transfer at once with MpOutcome::Ok, as before
 
 ## Fixes
 

@@ -10,7 +10,7 @@ use common::memory_channel::MemoryChannel;
 use libosdp::{
     Buzzer, BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
     CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
-    FileTxCommand, Flag, KeyPress, MfgCommand, MfgReply, MpKind, MpOutcome, MpPhase, Nak,
+    FileTxCommand, Finalize, Flag, KeyPress, MfgCommand, MfgReply, MpKind, MpOutcome, MpPhase, Nak,
     Notification, OpenMode, PdId, PdIndex, PdInfoBuilder,
     PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
 };
@@ -806,6 +806,64 @@ fn only_a_multi_part_operation_can_be_cancelled() -> Result<()> {
         submission.cancel(),
         Err(Error::InvalidArgument(_))
     ));
+    Ok(())
+}
+
+struct VerifyingSink {
+    checks_left: Arc<AtomicUsize>,
+}
+
+impl FileOps for VerifyingSink {
+    fn open(&mut self, _: i32, _: OpenMode) -> core::result::Result<u32, FileError> {
+        Ok(0)
+    }
+    fn read(&mut self, _: &mut [u8], _: u32) -> core::result::Result<usize, FileError> {
+        Ok(0)
+    }
+    fn write(&mut self, buf: &[u8], _: u32) -> core::result::Result<usize, FileError> {
+        Ok(buf.len())
+    }
+    fn close(&mut self) -> core::result::Result<(), FileError> {
+        Ok(())
+    }
+    fn finalize(&mut self) -> Finalize {
+        match self.checks_left.load(Ordering::SeqCst) {
+            0 => Finalize::Done(MpOutcome::Invalid),
+            n => {
+                self.checks_left.store(n - 1, Ordering::SeqCst);
+                Finalize::Pending {
+                    retry_after: Duration::from_millis(10),
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn pd_finalizes_a_received_file_with_its_own_outcome() -> Result<()> {
+    let (cp, target, pd) = notifying_pair()?;
+    refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
+    let checks_left = Arc::new(AtomicUsize::new(2));
+    cp.register_file_ops(target, Box::new(MemFile(vec![0x5A; 512])))?;
+    pd.register_file_ops(Box::new(VerifyingSink {
+        checks_left: checks_left.clone(),
+    }))?;
+    pd.set_command_handler(|_, _: &mut Responder<'_>| Ok(()));
+    let transfer = cp.submit(target, Command::FileTx(FileTxCommand { id: 1 }))?;
+    assert_eq!(
+        refresh_until_done(&cp, &pd, &transfer),
+        Err(CompletionError::Failed)
+    );
+    assert_eq!(checks_left.load(Ordering::SeqCst), 0);
+    let mut done = None;
+    while let Some((_, item)) = cp.next_event() {
+        if let CpEvent::Notification(Notification::Multipart(mp)) = item {
+            if let MpPhase::Done(outcome) = mp.phase {
+                done = Some(outcome);
+            }
+        }
+    }
+    assert_eq!(done, Some(MpOutcome::Invalid));
     Ok(())
 }
 
