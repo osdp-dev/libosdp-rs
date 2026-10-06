@@ -131,6 +131,10 @@ Release subject ## TODO
   CardPresent, CardData, PinComplete, Error). LibOSDP builds this only
   with the new trs feature, which turns on libosdp-sys's; without it,
   these commands are refused with Error::Rejected
+- trs: Scan a PD's reader for smart cards in the background with
+  ControlPanel::trs_scan_enable, at a TrsScan cadence, and
+  trs_scan_disable; max_apdu_len says how large a C-APDU the link
+  carries
 
 ## Fixes
 

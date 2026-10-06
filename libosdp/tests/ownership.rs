@@ -14,7 +14,7 @@ use libosdp::{
     FileTxCommand, Finalize, Flag, KeyPress, Metrics, MfgCommand, MfgReply, MfgStatus, MpKind,
     MpOutcome, MpPhase, Multipart, Nak, Notification, OpenMode, PdId, PdIndex, PdInfoBuilder,
     PeripheralDevice, PivReply, PivRequest, ReaderStatus, Responder, Status, StatusKind,
-    Submission, TimeDateCommand, TrsCommand,
+    Submission, TimeDateCommand, TrsCommand, TrsScan,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -1214,6 +1214,25 @@ fn card_session_carries_apdus_to_the_card() -> Result<()> {
     assert!(events.contains(&CpEvent::Event(Event::Trs(r_apdu))));
     let opened = CpEvent::Notification(Notification::TrsStatus(TrsSessionStatus::Opened));
     assert!(events.contains(&opened));
+    Ok(())
+}
+
+#[test]
+fn presence_scan_runs_only_with_the_trs_feature() -> Result<()> {
+    let (cp, target, _pd) = smart_card_pair()?;
+    let enabled = cp.trs_scan_enable(target, TrsScan::default());
+    let disabled = cp.trs_scan_disable(target);
+    if cfg!(feature = "trs") {
+        assert_eq!((enabled, disabled), (Ok(()), Ok(())));
+        let max = cp.max_apdu_len(target).unwrap();
+        assert!(max > 0 && max < 258);
+    } else {
+        assert_eq!(
+            (enabled, disabled),
+            (Err(Error::Rejected), Err(Error::Rejected))
+        );
+        assert_eq!(cp.max_apdu_len(target), None);
+    }
     Ok(())
 }
 

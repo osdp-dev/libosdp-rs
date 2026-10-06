@@ -17,6 +17,7 @@ type Result<T> = core::result::Result<T, Error>;
 const APDU_MAX: usize = libosdp_sys::OSDP_TRS_APDU_MAX_LEN as usize;
 const CSN_MAX: usize = libosdp_sys::OSDP_TRS_CSN_MAX_LEN as usize;
 const PROTOCOL_DATA_MAX: usize = libosdp_sys::OSDP_TRS_PROTOCOL_DATA_MAX_LEN as usize;
+const MILLISECOND: Duration = Duration::from_millis(1);
 
 fn to_apdu(data: &[u8]) -> Result<libosdp_sys::osdp_trs_apdu> {
     let mut apdu = libosdp_sys::osdp_trs_apdu {
@@ -536,6 +537,38 @@ impl TryFrom<TrsReply> for libosdp_sys::osdp_trs_reply {
     }
 }
 
+/// Cadence of the background card presence scan, for readers that do not
+/// report a smart card entering the field on their own; see
+/// [`ControlPanel::trs_scan_enable`](crate::ControlPanel::trs_scan_enable).
+/// Each time is a whole number of milliseconds up to 65.535 s, and
+/// [`Duration::ZERO`], as in [`TrsScan::default`], selects LibOSDP's
+/// default.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct TrsScan {
+    /// Time in the reader's default mode between probes, where ordinary
+    /// credential reads work; 200 ms by default. Shorter is more aggressive:
+    /// it leaves less time for ordinary reads.
+    pub mode0_dwell: Duration,
+    /// Time spent in transparent mode per probe, watching for a card;
+    /// 200 ms by default.
+    pub mode1_dwell: Duration,
+    /// How long transparent mode is held after a card is seen, for the
+    /// application to open a session; 500 ms by default.
+    pub hold: Duration,
+}
+
+impl TryFrom<TrsScan> for libosdp_sys::osdp_trs_scan_params {
+    type Error = Error;
+
+    fn try_from(value: TrsScan) -> Result<Self> {
+        Ok(libosdp_sys::osdp_trs_scan_params {
+            mode0_dwell_ms: to_count(value.mode0_dwell, MILLISECOND, "scan mode 0 dwell time")?,
+            mode1_dwell_ms: to_count(value.mode1_dwell, MILLISECOND, "scan mode 1 dwell time")?,
+            hold_ms: to_count(value.hold, MILLISECOND, "scan hold time")?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -644,5 +677,32 @@ mod tests {
         };
         let raw: Result<libosdp_sys::osdp_trs_cmd> = TrsCommand::EnterPin(entry).try_into();
         assert!(matches!(raw, Err(Error::InvalidArgument(_))));
+    }
+
+    #[test]
+    fn scan_times_are_whole_milliseconds() {
+        let raw: libosdp_sys::osdp_trs_scan_params = TrsScan {
+            hold: Duration::from_millis(750),
+            ..TrsScan::default()
+        }
+        .try_into()
+        .unwrap();
+        assert_eq!(
+            (raw.mode0_dwell_ms, raw.mode1_dwell_ms, raw.hold_ms),
+            (0, 0, 750)
+        );
+        for scan in [
+            TrsScan {
+                mode0_dwell: Duration::from_micros(1500),
+                ..TrsScan::default()
+            },
+            TrsScan {
+                hold: Duration::from_secs(66),
+                ..TrsScan::default()
+            },
+        ] {
+            let raw: Result<libosdp_sys::osdp_trs_scan_params> = scan.try_into();
+            assert!(matches!(raw, Err(Error::InvalidArgument(_))));
+        }
     }
 }

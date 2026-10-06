@@ -7,9 +7,9 @@
 //! (PD) on the OSDP bus. It can send commands to and receive events from PDs.
 
 use crate::{
-    busy::Busy, CapFunction, Capability, Channel, Command, Error, Event, FileOps, FileProgress,
-    Challenge, Flag, Metrics, MpKind, Notification, PdId, PdInfoBuilder, PivReply, PivRequest,
-    Submission,
+    busy::Busy, CapFunction, Capability, Challenge, Channel, Command, Error, Event, FileOps,
+    FileProgress, Flag, Metrics, MpKind, Notification, PdId, PdInfoBuilder, PivReply, PivRequest,
+    Submission, TrsScan,
 };
 use crate::submit::{Operation, Slot};
 use crate::ffi::{
@@ -416,6 +416,45 @@ impl ControlPanel {
     /// what happened since the previous one.
     pub fn take_metrics(&self, pd: PdIndex) -> Metrics {
         crate::metrics::take_metrics(self.ctx, pd.as_c())
+    }
+
+    /// Have LibOSDP scan `pd`'s reader for smart cards in the background,
+    /// at the cadence `scan` sets, and report a card it sees as an
+    /// [`Event::Trs`]. Only readers that do not report cards on their own
+    /// need this. The scan pauses during a card session or file transfer;
+    /// a reader that refuses a probe raises
+    /// [`TrsSessionStatus::ScanSuspended`](crate::TrsSessionStatus) and is
+    /// probed again later, backing off.
+    ///
+    /// Refused with [`Error::Rejected`] without the `trs` feature.
+    pub fn trs_scan_enable(&self, pd: PdIndex, scan: TrsScan) -> Result<()> {
+        let params = libosdp_sys::osdp_trs_scan_params::try_from(scan)?;
+        let rc = unsafe { libosdp_sys::osdp_cp_trs_scan_enable(self.ctx, pd.as_c(), &params) };
+        if rc < 0 {
+            Err(Error::Rejected)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Stop the presence scan on `pd`; its reader is returned to its
+    /// default mode on the next refresh. Refused with [`Error::Rejected`]
+    /// without the `trs` feature.
+    pub fn trs_scan_disable(&self, pd: PdIndex) -> Result<()> {
+        let rc = unsafe { libosdp_sys::osdp_cp_trs_scan_disable(self.ctx, pd.as_c()) };
+        if rc < 0 {
+            Err(Error::Rejected)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// The largest C-APDU that fits a [`TrsCommand::Apdu`](crate::TrsCommand)
+    /// to `pd`, which the packet size in use on the link bounds; final only
+    /// once `pd` has been online. `None` without the `trs` feature.
+    pub fn max_apdu_len(&self, pd: PdIndex) -> Option<usize> {
+        let len = unsafe { libosdp_sys::osdp_cp_trs_get_max_apdu_len(self.ctx, pd.as_c()) };
+        usize::try_from(len).ok()
     }
 
     /// Check whether `pd` is online.

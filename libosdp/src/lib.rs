@@ -123,7 +123,7 @@ pub use status::{ReaderStatus, Status, StatusKind};
 pub use submit::Submission;
 pub use trs::{
     CardData, CardInfo, CardProtocol, CardStatus, PinBlock, PinEndOn, PinEntry, PinFormat,
-    PinLengthField, PinResult, TrsCommand, TrsReply,
+    PinLengthField, PinResult, TrsCommand, TrsReply, TrsScan,
 };
 
 /// Packs bytes into the little-endian `u32` LibOSDP expects.
