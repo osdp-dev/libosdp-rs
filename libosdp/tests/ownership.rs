@@ -8,9 +8,9 @@ mod common;
 
 use common::memory_channel::MemoryChannel;
 use libosdp::{
-    Buzzer, BuzzerCommand, CardRead, Channel, ChannelError, Command, CompletionError,
-    ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps, FileTxCommand,
-    KeyPress, MfgCommand, MfgReply, Nak, CapFunction, Capability, PdIndex, PdInfoBuilder,
+    Buzzer, BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
+    CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
+    FileTxCommand, KeyPress, MfgCommand, MfgReply, Nak, PdId, PdIndex, PdInfoBuilder,
     PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
 };
 use std::sync::{
@@ -198,7 +198,7 @@ fn secure_pair_with_event_queue(
     let target = builder.add_pd(pd_info()?.secure_channel_key(KEY))?;
     let cp = builder.build()?;
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !(cp.is_online(target) && cp.is_sc_active(target)) {
+    while !(cp.is_online(target) && cp.is_secure(target)) {
         assert!(Instant::now() < deadline, "secure channel never came up");
         cp.refresh();
         pd.refresh();
@@ -225,8 +225,12 @@ fn cp_drop_with_commands_queued_frees_them_via_aborted() -> Result<()> {
 #[test]
 fn pd_capabilities_survive_setup() -> Result<()> {
     let (cp, target, _pd) = secure_pair()?;
-    let cap = cp.get_capability(target, CapFunction::LedControl)?;
-    assert_eq!(cap, Capability::new(CapFunction::LedControl, 1, 1));
+    assert_eq!(
+        cp.capability(target, CapFunction::LedControl),
+        Some(Capability::new(CapFunction::LedControl, 1, 1))
+    );
+    assert_eq!(cp.capability(target, CapFunction::Biometrics), None);
+    assert_eq!(cp.pd_id(target), Some(PdId::default()));
     Ok(())
 }
 
@@ -245,8 +249,10 @@ fn capabilities_set_after_setup_reach_the_cp() -> Result<()> {
         pd.refresh();
         std::thread::sleep(Duration::from_millis(5));
     }
-    let cap = cp.get_capability(target, CapFunction::LedControl)?;
-    assert_eq!(cap, Capability::new(CapFunction::LedControl, 1, 4));
+    assert_eq!(
+        cp.capability(target, CapFunction::LedControl),
+        Some(Capability::new(CapFunction::LedControl, 1, 4))
+    );
     Ok(())
 }
 

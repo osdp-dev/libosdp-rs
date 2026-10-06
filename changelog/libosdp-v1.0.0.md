@@ -63,10 +63,13 @@ Release subject ## TODO
   serde_arrays
 - pdcap: Replace PdCapability and PdCapEntity with Capability {
   function, compliance, items }, whose function is a CapFunction.
-  PdInfoBuilder, PeripheralDevice::set_capabilities and
-  ControlPanel::get_capability take it, get_capability by the
-  CapFunction to read. The string parsers for capabilities, which only
-  osdpctl used, are gone
+  PdInfoBuilder and PeripheralDevice::set_capabilities take it. The
+  string parsers for capabilities, which only osdpctl used, are gone
+- cp, pd: Answer queries with Option: pd_id and capability return None
+  while the PD is offline, capability also for a function the PD did not
+  advertise, and file_progress, which replaces file_transfer_status,
+  returns a FileProgress { size, offset } of u32s, or None outside a
+  transfer. is_sc_active is now is_secure
 
 ## Enhancements
 

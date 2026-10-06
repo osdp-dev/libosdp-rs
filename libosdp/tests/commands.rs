@@ -54,7 +54,7 @@ fn test_commands() -> Result<()> {
 
     thread::sleep(time::Duration::from_secs(2));
     loop {
-        if pd.get_device().is_sc_active() {
+        if pd.get_device().is_secure() {
             break;
         }
         thread::sleep(time::Duration::from_secs(1));

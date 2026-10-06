@@ -13,8 +13,8 @@
 //! to the CP.
 
 use crate::{
-    busy::Busy, Capability, Channel, Command, Error, Event, FileOps, Nak, PdInfoBuilder,
-    Submission,
+    busy::Busy, Capability, Channel, Command, Error, Event, FileOps, FileProgress, Nak,
+    PdInfoBuilder, Submission,
 };
 use crate::ffi::{
     callback::{pd_command_trampoline, CallbackSlot, PdCommandSlot, Shared},
@@ -245,25 +245,26 @@ impl PeripheralDevice {
     }
 
     /// Check whether the secure channel with the CP is active.
-    pub fn is_sc_active(&self) -> bool {
+    pub fn is_secure(&self) -> bool {
         let mut buf: u8 = 0;
         unsafe { libosdp_sys::osdp_get_sc_status_mask(self.ctx, &mut buf as *mut u8) };
         buf != 0
     }
 
-    /// Get status of the ongoing file transfer of PD as (size, offset), or
-    /// [`Error::NotInProgress`] once the transfer has ended, however it ended.
-    pub fn file_transfer_status(&self) -> Result<(i32, i32)> {
-        let mut size: u32 = 0;
-        let mut offset: u32 = 0;
+    /// How far the file transfer from the CP has got, or `None` when no
+    /// transfer is in progress: none was started, or the last one ended,
+    /// however it ended.
+    pub fn file_progress(&self) -> Option<FileProgress> {
+        let mut progress = FileProgress::default();
         let rc = unsafe {
-            libosdp_sys::osdp_get_file_tx_status(self.ctx, 0, &mut size, &mut offset)
+            libosdp_sys::osdp_get_file_tx_status(
+                self.ctx,
+                0,
+                &mut progress.size,
+                &mut progress.offset,
+            )
         };
-        if rc < 0 {
-            Err(Error::NotInProgress)
-        } else {
-            Ok((size as i32, offset as i32))
-        }
+        (rc == 0).then_some(progress)
     }
 
     /// Register a file operations handler for PD. See [`crate::FileOps`]

@@ -8,6 +8,16 @@
 
 type Result<T> = core::result::Result<T, crate::FileError>;
 
+/// How far a file transfer has got.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct FileProgress {
+    /// Size of the file, as the sender's [`FileOps::open`] reported it.
+    pub size: u32,
+    /// Bytes sent or received so far.
+    pub offset: u32,
+}
+
 /// File operations handler trait. Any type that implements this trait can be
 /// registered with [`crate::ControlPanel::register_file_ops`] or
 /// [`crate::PeripheralDevice::register_file_ops`].

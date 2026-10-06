@@ -4,8 +4,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use libosdp::{
-    Buzzer, BuzzerCommand, CardRead, Channel, ChannelError, Command, ControlPanelBuilder, Error,
-    Event, FileError, Flag, KeyPress, KeySetCommand, PdInfoBuilder, PeripheralDevice,
+    Buzzer, BuzzerCommand, CapFunction, CardRead, Channel, ChannelError, Command,
+    ControlPanelBuilder, Error, Event, FileError, Flag, KeyPress, KeySetCommand, PdInfoBuilder,
+    PeripheralDevice,
 };
 
 struct Idle;
@@ -32,11 +33,14 @@ fn builder_reports_the_bad_argument() {
 }
 
 #[test]
-fn file_status_outside_a_transfer_is_not_in_progress() -> Result<(), Error> {
+fn queries_about_a_pd_never_seen_answer_none() -> Result<(), Error> {
     let mut builder = ControlPanelBuilder::new(Box::new(Idle));
     let pd = builder.add_pd(PdInfoBuilder::new().address(101)?.baud_rate(115200)?)?;
     let cp = builder.build()?;
-    assert_eq!(cp.file_transfer_status(pd), Err(Error::NotInProgress));
+    assert_eq!(cp.file_progress(pd), None);
+    assert_eq!(cp.pd_id(pd), None);
+    assert_eq!(cp.capability(pd, CapFunction::LedControl), None);
+    assert!(!cp.is_secure(pd));
     Ok(())
 }
 

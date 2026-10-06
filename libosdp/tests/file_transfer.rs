@@ -147,9 +147,13 @@ fn test_file_transfer() -> Result<()> {
     let expected_len = std::fs::metadata("/tmp/ftx_test.in").unwrap().len();
     let deadline = std::time::Instant::now() + Duration::from_secs(60);
     loop {
-        match pd.get_device().file_transfer_status() {
-            Ok((size, offset)) => log::info!("File TX in progress: size:{size} offset:{offset}"),
-            Err(_) => {
+        match pd.get_device().file_progress() {
+            Some(progress) => log::info!(
+                "File TX in progress: size:{} offset:{}",
+                progress.size,
+                progress.offset
+            ),
+            None => {
                 let received = std::fs::metadata("/tmp/ftx_test.out").map(|m| m.len()).unwrap_or(0);
                 if received == expected_len {
                     break;

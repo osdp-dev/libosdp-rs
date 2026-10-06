@@ -7,8 +7,8 @@
 //! (PD) on the OSDP bus. It can send commands to and receive events from PDs.
 
 use crate::{
-    busy::Busy, file::FileOps, CapFunction, Capability, Channel, Command, Error, Event, Flag, PdId,
-    PdInfoBuilder, Submission,
+    busy::Busy, CapFunction, Capability, Channel, Command, Error, Event, FileOps, FileProgress,
+    Flag, PdId, PdInfoBuilder, Submission,
 };
 use crate::ffi::{
     callback::{cp_event_trampoline, CpEventQueue, Shared},
@@ -228,27 +228,31 @@ impl ControlPanel {
         self.events.get().dropped()
     }
 
-    /// Get the [`PdId`] that `pd` reported.
-    pub fn get_pd_id(&self, pd: PdIndex) -> Result<PdId> {
+    /// The [`PdId`] that `pd` reported, or `None` while `pd` is offline:
+    /// the CP reads it each time `pd` comes online, and keeps the last one
+    /// read until then.
+    pub fn pd_id(&self, pd: PdIndex) -> Option<PdId> {
+        if !self.is_online(pd) {
+            return None;
+        }
         let mut pd_id: libosdp_sys::osdp_pd_id =
             unsafe { core::mem::MaybeUninit::zeroed().assume_init() };
         let rc = unsafe { libosdp_sys::osdp_cp_get_pd_id(self.ctx, pd.as_c(), &mut pd_id) };
-        if rc < 0 {
-            Err(Error::Rejected)
-        } else {
-            Ok(pd_id.into())
-        }
+        (rc == 0).then(|| pd_id.into())
     }
 
-    /// Get the [`Capability`] that `pd` reported for `function`.
-    pub fn get_capability(&self, pd: PdIndex, function: CapFunction) -> Result<Capability> {
+    /// The [`Capability`] that `pd` last advertised for `function`, or
+    /// `None` while `pd` is offline or when it did not advertise `function`.
+    /// A capability advertised with a compliance level and item count of 0
+    /// reads as `None` too.
+    pub fn capability(&self, pd: PdIndex, function: CapFunction) -> Option<Capability> {
+        if !self.is_online(pd) {
+            return None;
+        }
         let mut cap = Capability::new(function, 0, 0).into();
         let rc = unsafe { libosdp_sys::osdp_cp_get_capability(self.ctx, pd.as_c(), &mut cap) };
-        if rc < 0 {
-            Err(Error::Rejected)
-        } else {
-            Ok(cap.try_into()?)
-        }
+        let cap = Capability::try_from(cap).ok().filter(|_| rc == 0)?;
+        (cap.compliance != 0 || cap.items != 0).then_some(cap)
     }
 
     /// Set `flags` for `pd` on a running link.
@@ -289,26 +293,27 @@ impl ControlPanel {
     }
 
     /// Check whether `pd` has an active secure channel.
-    pub fn is_sc_active(&self, pd: PdIndex) -> bool {
+    pub fn is_secure(&self, pd: PdIndex) -> bool {
         let mut buf: [u8; 16] = [0; 16];
         unsafe { libosdp_sys::osdp_get_sc_status_mask(self.ctx, &mut buf as *mut u8) };
         let pd = usize::from(pd);
         buf[pd / 8] & (1 << (pd % 8)) != 0
     }
 
-    /// Get status of the ongoing file transfer to `pd` as (size, offset), or
-    /// [`Error::NotInProgress`] once the transfer has ended, however it ended.
-    pub fn file_transfer_status(&self, pd: PdIndex) -> Result<(i32, i32)> {
-        let mut size: u32 = 0;
-        let mut offset: u32 = 0;
+    /// How far the file transfer to `pd` has got, or `None` when no
+    /// transfer is in progress: none was started, or the last one ended,
+    /// however it ended.
+    pub fn file_progress(&self, pd: PdIndex) -> Option<FileProgress> {
+        let mut progress = FileProgress::default();
         let rc = unsafe {
-            libosdp_sys::osdp_get_file_tx_status(self.ctx, pd.as_c(), &mut size, &mut offset)
+            libosdp_sys::osdp_get_file_tx_status(
+                self.ctx,
+                pd.as_c(),
+                &mut progress.size,
+                &mut progress.offset,
+            )
         };
-        if rc < 0 {
-            Err(Error::NotInProgress)
-        } else {
-            Ok((size as i32, offset as i32))
-        }
+        (rc == 0).then_some(progress)
     }
 
     /// Register a file operations handler for `pd`. See [`crate::FileOps`]
