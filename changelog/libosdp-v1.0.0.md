@@ -18,7 +18,7 @@ Release subject ## TODO
 - api: Drop the Osdp prefix from public types. OsdpCommand, OsdpEvent,
   OsdpFlag and OsdpFileOps are now Command, Event, Flag and FileOps;
   payload structs are named for what they carry (LedCommand,
-  BuzzerCommand, CardRead, KeyPress, StatusReport, ...)
+  BuzzerCommand, CardRead, KeyPress, ...)
 - api: Take &self on every ControlPanel and PeripheralDevice method. A
   context stays Send but not Sync. refresh() called from inside one of
   the context's own callbacks, including FileOps::open run by
@@ -56,6 +56,11 @@ Release subject ## TODO
 - cp: Replace set_flag, which panicked when LibOSDP refuses a change,
   with set_flags and clear_flags, which return Error::Rejected and
   change no flag
+- status: Replace StatusReport and its fixed 64-byte report with
+  Status::{Input, Output, Local { tamper, power }, Reader}, one entry
+  per entity, as LibOSDP 4.0 reports them. Command::Status takes the
+  StatusKind to query, and the serde feature no longer pulls in
+  serde_arrays
 
 ## Enhancements
 

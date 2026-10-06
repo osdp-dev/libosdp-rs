@@ -79,6 +79,7 @@ mod pdcap;
 mod pdid;
 mod pdinfo;
 mod queue;
+mod status;
 mod submit;
 
 // Re-export for convenience
@@ -93,6 +94,7 @@ pub use pdinfo::*;
 pub use cp::{ControlPanel, ControlPanelBuilder, CpEvent, PdIndex};
 pub use error::{CompletionError, Error, FileError, Nak};
 pub use pd::{CommandHandler, PeripheralDevice, Responder};
+pub use status::{ReaderStatus, Status, StatusKind};
 pub use submit::Submission;
 
 /// Packs bytes into the little-endian `u32` LibOSDP expects.

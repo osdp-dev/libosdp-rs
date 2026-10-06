@@ -11,7 +11,7 @@ use libosdp::{
     Buzzer, BuzzerCommand, CardRead, Channel, ChannelError, Command, CompletionError,
     ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps, FileTxCommand,
     KeyPress, MfgCommand, MfgReply, Nak, PdCapEntity, PdCapability, PdIndex, PdInfoBuilder,
-    PeripheralDevice, Responder, StatusReport, StatusReportType, Submission,
+    PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -547,15 +547,8 @@ fn handler_answers_a_manufacturer_command_inline() -> Result<()> {
     Ok(())
 }
 
-fn local_status(tamper: u8, power: u8) -> StatusReport {
-    let mut report = [0; 64];
-    report[0] = tamper;
-    report[1] = power;
-    StatusReport {
-        type_: StatusReportType::Local,
-        nr_entries: 2,
-        report,
-    }
+fn local_status(tamper: bool, power: bool) -> Status {
+    Status::Local { tamper, power }
 }
 
 #[test]
@@ -563,16 +556,11 @@ fn handler_answers_a_status_query_inline() -> Result<()> {
     let (cp, target, pd) = secure_pair()?;
     pd.set_command_handler(|cmd, reply: &mut Responder<'_>| match cmd {
         Command::Status(_) => reply
-            .reply(Event::Status(local_status(1, 0)))
+            .reply(Event::Status(local_status(true, false)))
             .map_err(|_| Nak::Record),
         _ => Ok(()),
     });
-    let query = StatusReport {
-        type_: StatusReportType::Local,
-        nr_entries: 0,
-        report: [0; 64],
-    };
-    let submission = cp.submit(target, Command::Status(query))?;
+    let submission = cp.submit(target, Command::Status(StatusKind::Local))?;
     assert_eq!(refresh_until_done(&cp, &pd, &submission), Ok(()));
     let mut received = None;
     refresh_until(&cp, &pd, || {
@@ -581,7 +569,49 @@ fn handler_answers_a_status_query_inline() -> Result<()> {
     });
     assert_eq!(
         received,
-        Some((target, CpEvent::Event(Event::Status(local_status(1, 0)))))
+        Some((
+            target,
+            CpEvent::Event(Event::Status(local_status(true, false)))
+        ))
+    );
+    Ok(())
+}
+
+#[test]
+fn status_reply_of_another_kind_is_refused() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    let replied = Arc::new(Mutex::new(None));
+    let seen = replied.clone();
+    pd.set_command_handler(move |_, reply: &mut Responder<'_>| {
+        let status = Status::Input(vec![]);
+        *seen.lock().unwrap() = Some(reply.reply(Event::Status(status)));
+        Err(Nak::Record)
+    });
+    let submission = cp.submit(target, Command::Status(StatusKind::Local))?;
+    assert_eq!(
+        refresh_until_done(&cp, &pd, &submission),
+        Err(CompletionError::Failed)
+    );
+    assert!(matches!(
+        *replied.lock().unwrap(),
+        Some(Err(Error::InvalidArgument(_)))
+    ));
+    Ok(())
+}
+
+#[test]
+fn status_with_an_entry_per_reader_the_pd_lacks_is_naked() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    pd.set_command_handler(|cmd, reply: &mut Responder<'_>| match cmd {
+        Command::Status(StatusKind::Reader) => reply
+            .reply(Event::Status(Status::Reader(vec![ReaderStatus::Normal])))
+            .map_err(|_| Nak::Record),
+        _ => Ok(()),
+    });
+    let submission = cp.submit(target, Command::Status(StatusKind::Reader))?;
+    assert_eq!(
+        refresh_until_done(&cp, &pd, &submission),
+        Err(CompletionError::Failed)
     );
     Ok(())
 }

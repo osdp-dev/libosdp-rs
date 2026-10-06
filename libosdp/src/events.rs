@@ -8,7 +8,7 @@
 //! etc.,). They do this by creating an "event" and sending it to the CP. This
 //! module is responsible to handling such events though [`Event`].
 
-use crate::Error;
+use crate::{Error, Status};
 use alloc::vec::Vec;
 
 use super::ConvertEndian;
@@ -264,105 +264,6 @@ impl TryFrom<MfgReply> for libosdp_sys::osdp_event_mfgrep {
     }
 }
 
-/// Status report type
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum StatusReportType {
-    /// Input status report
-    Input,
-    /// Output status report
-    Output,
-    /// Reader tamper status; one byte per attached reader (0 normal, 1 not connected, 2 tamper)
-    Reader,
-    /// Local status report
-    Local,
-}
-
-impl TryFrom<libosdp_sys::osdp_status_report_type> for StatusReportType {
-    type Error = Error;
-
-    fn try_from(value: libosdp_sys::osdp_status_report_type) -> Result<Self> {
-        match value {
-            libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_INPUT => {
-                Ok(StatusReportType::Input)
-            }
-            libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_OUTPUT => {
-                Ok(StatusReportType::Output)
-            }
-            libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_READER => {
-                Ok(StatusReportType::Reader)
-            }
-            libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_LOCAL => {
-                Ok(StatusReportType::Local)
-            }
-            _ => Err(Error::Malformed("status report type")),
-        }
-    }
-}
-
-impl From<StatusReportType> for libosdp_sys::osdp_status_report_type {
-    fn from(value: StatusReportType) -> Self {
-        match value {
-            StatusReportType::Input => {
-                libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_INPUT
-            }
-            StatusReportType::Output => {
-                libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_OUTPUT
-            }
-            StatusReportType::Reader => {
-                libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_READER
-            }
-            StatusReportType::Local => {
-                libosdp_sys::osdp_status_report_type_OSDP_STATUS_REPORT_LOCAL
-            }
-        }
-    }
-}
-
-/// Event to describe various status changes on PD
-///
-/// This event is used by the PD to indicate status such as input, output,
-/// tamper, etc.,. up to a maximum of 64 status bits can be reported. The values
-/// of the least significant N bit of status are considered, where N is the
-/// number of items as described in the corresponding capability codes,
-/// - PdCapability::OutputControl
-/// - PdCapability::ContactStatusMonitoring
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct StatusReport {
-    /// The kind of event to report see `enum osdp_event_status_type_e`
-    pub type_: StatusReportType,
-    /// Number of valid entries in `report`
-    pub nr_entries: usize,
-    /// Status report
-    #[cfg_attr(feature = "serde", serde(with = "serde_arrays"))]
-    pub report: [u8; 64],
-}
-
-impl TryFrom<libosdp_sys::osdp_status_report> for StatusReport {
-    type Error = Error;
-
-    fn try_from(value: libosdp_sys::osdp_status_report) -> Result<Self> {
-        Ok(StatusReport {
-            type_: value.type_.try_into()?,
-            nr_entries: value.nr_entries as usize,
-            report: value.report,
-        })
-    }
-}
-
-impl From<StatusReport> for libosdp_sys::osdp_status_report {
-    fn from(value: StatusReport) -> Self {
-        libosdp_sys::osdp_status_report {
-            type_: value.type_.into(),
-            nr_entries: value.nr_entries as i32,
-            report: value.report,
-        }
-    }
-}
-
 /// CP to intimate it about various events that originate there (such as key
 /// press, card reads, etc.,). They do this by creating an “event” and sending
 /// it to the CP. This module is responsible to handling such events though
@@ -380,8 +281,9 @@ pub enum Event {
     /// Event to transport a Manufacturer specific command’s response
     MfgReply(MfgReply),
 
-    /// Event to describe a input/output/tamper/power status change
-    Status(StatusReport),
+    /// A PD's status, reported on a change or in answer to a
+    /// [`Command::Status`](crate::Command::Status)
+    Status(Status),
 }
 
 impl TryFrom<Event> for libosdp_sys::osdp_event {
@@ -417,7 +319,9 @@ impl TryFrom<Event> for libosdp_sys::osdp_event {
                 _node: unsafe { core::mem::zeroed() },
                 type_: libosdp_sys::osdp_event_type_OSDP_EVENT_STATUS,
                 flags: 0,
-                __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 { status: e.into() },
+                __bindgen_anon_1: libosdp_sys::osdp_event__bindgen_ty_1 {
+                    status: e.try_into()?,
+                },
             },
         })
     }

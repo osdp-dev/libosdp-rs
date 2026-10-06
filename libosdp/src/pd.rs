@@ -88,20 +88,22 @@ impl Responder<'_> {
     /// [`Event::MfgReply`] to a [`Command::Mfg`], or a [`Event::Status`] of
     /// the requested kind to a [`Command::Status`].
     ///
-    /// A status report of another kind than the one queried is refused with
-    /// [`Error::InvalidArgument`]. Any other event joins the PD's event
+    /// A status of another kind than the one queried is refused with
+    /// [`Error::InvalidArgument`]. A status must carry one entry for every
+    /// entity of its kind the PD advertises; LibOSDP refuses the CP's query
+    /// with a NAK otherwise. Any other event joins the PD's event
     /// queue: LibOSDP sends it inline, as the reply to this command, only
     /// when it answers the command and is at the head of that queue.
     /// Otherwise it goes out as the response to a later poll.
     pub fn reply(&mut self, event: Event) -> Result<()> {
         let cmd = unsafe { &mut *self.cmd };
         if cmd.id == libosdp_sys::osdp_cmd_e_OSDP_CMD_STATUS {
-            if let Event::Status(report) = event {
+            if let Event::Status(status) = event {
                 let query = unsafe { &mut cmd.__bindgen_anon_1.status };
-                if query.type_ != report.type_.into() {
+                if query.type_ != status.kind().into() {
                     return Err(Error::InvalidArgument("status reply of another kind"));
                 }
-                *query = report.into();
+                *query = status.try_into()?;
                 return Ok(());
             }
         }

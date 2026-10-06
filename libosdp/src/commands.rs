@@ -8,7 +8,7 @@
 //! such commands though [`Command`].
 
 use crate::Error;
-use crate::StatusReport;
+use crate::StatusKind;
 use alloc::vec::Vec;
 use core::time::Duration;
 
@@ -841,7 +841,7 @@ pub enum Command {
     FileTx(FileTxCommand),
 
     /// Command to query status from the PD
-    Status(StatusReport),
+    Status(StatusKind),
 }
 
 impl TryFrom<Command> for libosdp_sys::osdp_cmd {
@@ -955,10 +955,9 @@ impl TryFrom<libosdp_sys::osdp_cmd> for Command {
             libosdp_sys::osdp_cmd_e_OSDP_CMD_FILE_TX => {
                 Ok(Command::FileTx(unsafe { value.__bindgen_anon_1.file_tx.into() }))
             }
-            libosdp_sys::osdp_cmd_e_OSDP_CMD_STATUS => {
-                let data = unsafe { value.__bindgen_anon_1.status.try_into() }?;
-                Ok(Command::Status(data))
-            }
+            libosdp_sys::osdp_cmd_e_OSDP_CMD_STATUS => Ok(Command::Status(
+                unsafe { value.__bindgen_anon_1.status }.type_.try_into()?,
+            )),
             _ => Err(Error::Malformed("command id")),
         }
     }
