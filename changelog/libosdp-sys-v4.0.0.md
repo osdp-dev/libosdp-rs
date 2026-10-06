@@ -9,6 +9,9 @@ Release subject ## TODO
 ## Enhancements
 
 - ## TODO
+- build: Add an opt-in trs feature that builds LibOSDP's Transparent
+  Reader Support (OPT_BUILD_OSDP_TRS). Without it, LibOSDP refuses
+  transparent reader commands and the presence scan
 
 ## Fixes
 

@@ -170,6 +170,12 @@ fn main() -> Result<()> {
         build = build.file(file);
     }
 
+    if cfg!(feature = "trs") {
+        build = build
+            .define("OPT_BUILD_OSDP_TRS", "1")
+            .file("vendor/src/osdp_trs.c");
+    }
+
     if cfg!(feature = "skip_mark_byte") {
         build = build.define("OPT_OSDP_SKIP_MARK_BYTE", "1");
     }
