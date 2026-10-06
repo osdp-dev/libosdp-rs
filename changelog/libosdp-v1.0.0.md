@@ -119,6 +119,12 @@ Release subject ## TODO
 - metrics: Read a link's health counters -- packets, check errors, NAKs,
   secure channel handshakes and failures, commands, events -- with
   take_metrics on a ControlPanel or PeripheralDevice, which resets them
+- piv: Read PIV data objects from, and send general and
+  challenge/response authenticate challenges to, the smart card in a
+  PD's reader with ControlPanel::piv_data, general_auth and
+  challenge_auth. Each returns a Submission<'_, PivReply> whose status()
+  resolves into the card's reply; Submission::cancel stops it. A PD
+  answers Command::PivData, GenAuth and CrAuth with the matching Event
 
 ## Fixes
 

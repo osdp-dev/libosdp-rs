@@ -8,17 +8,18 @@
 
 use crate::{
     busy::Busy, CapFunction, Capability, Channel, Command, Error, Event, FileOps, FileProgress,
-    Flag, Metrics, MpKind, Notification, PdId, PdInfoBuilder, Submission,
+    Challenge, Flag, Metrics, MpKind, Notification, PdId, PdInfoBuilder, PivReply, PivRequest,
+    Submission,
 };
-use crate::submit::Operation;
+use crate::submit::{Operation, Slot};
 use crate::ffi::{
-    callback::{cp_event_trampoline, CpEventQueue, Shared},
+    callback::{cp_event_trampoline, CpEvents, Shared},
     channel::OwnedChannel,
     file::{FileRole, OwnedFileOps},
     log::cp_log_handler,
     submit::{cp_command_complete, RawSubmission},
 };
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
 use core::num::NonZeroUsize;
 use core::cell::Cell;
 
@@ -135,7 +136,7 @@ impl ControlPanelBuilder {
             ctx,
             busy: Cell::new(false),
             channel,
-            events: Shared::new(CpEventQueue::new(self.event_queue_capacity)),
+            events: Shared::new(CpEvents::new(self.event_queue_capacity)),
             file_ops: Vec::new(),
         };
         let completions = unsafe {
@@ -176,7 +177,7 @@ pub struct ControlPanel {
     busy: Cell<bool>,
     #[allow(dead_code)]
     channel: OwnedChannel,
-    events: Shared<CpEventQueue>,
+    events: Shared<CpEvents>,
     file_ops: Vec<OwnedFileOps>,
 }
 
@@ -221,29 +222,77 @@ impl ControlPanel {
     /// A command whose timings LibOSDP cannot express is refused with
     /// [`Error::InvalidArgument`] before it is queued.
     pub fn submit(&self, pd: PdIndex, cmd: Command) -> Result<Submission<'_>> {
+        let (slot, operation) = self.queue_command(pd, cmd, false)?;
+        Ok(Submission::new(slot, operation))
+    }
+
+    /// Read a PIV data object from the smart card in `pd`'s reader; the
+    /// returned handle resolves into the card's reply. LibOSDP runs one
+    /// PIV or authenticate command per PD at a time, and refuses another
+    /// with [`Error::Rejected`] until it ends.
+    ///
+    /// Dropping the handle sends the reply, when it comes, to
+    /// [`ControlPanel::next_event`] as an [`Event::PivData`], which is also
+    /// where it goes when the command is sent with
+    /// [`submit`](Self::submit).
+    pub fn piv_data(&self, pd: PdIndex, request: PivRequest) -> Result<Submission<'_, PivReply>> {
+        let (slot, operation) = self.queue_command(pd, Command::PivData(request), true)?;
+        Ok(Submission::new(slot, operation))
+    }
+
+    /// Have the smart card in `pd`'s reader answer `challenge` with a
+    /// general authenticate (osdp_GENAUTH); otherwise as
+    /// [`piv_data`](Self::piv_data).
+    pub fn general_auth(
+        &self,
+        pd: PdIndex,
+        challenge: Challenge,
+    ) -> Result<Submission<'_, PivReply>> {
+        let (slot, operation) = self.queue_command(pd, Command::GenAuth(challenge), true)?;
+        Ok(Submission::new(slot, operation))
+    }
+
+    /// Have the smart card in `pd`'s reader answer `challenge` with a
+    /// challenge/response authenticate (osdp_CRAUTH); otherwise as
+    /// [`piv_data`](Self::piv_data).
+    pub fn challenge_auth(
+        &self,
+        pd: PdIndex,
+        challenge: Challenge,
+    ) -> Result<Submission<'_, PivReply>> {
+        let (slot, operation) = self.queue_command(pd, Command::CrAuth(challenge), true)?;
+        Ok(Submission::new(slot, operation))
+    }
+
+    /// Hand `cmd` to LibOSDP for `pd`. A PIV or authenticate command's reply
+    /// is routed to the returned slot when `wants_reply`, and to the event
+    /// queue otherwise.
+    fn queue_command(
+        &self,
+        pd: PdIndex,
+        cmd: Command,
+        wants_reply: bool,
+    ) -> Result<(Rc<Slot>, Option<Operation>)> {
         let Some(_busy) = Busy::enter(&self.busy) else {
             return Err(Error::Rejected);
         };
-        let operation = match cmd {
-            Command::FileTx(_) => Some(Operation {
-                ctx: self.ctx,
-                pd,
-                kind: MpKind::FileTransfer,
-            }),
-            Command::BioRead(_) => Some(Operation {
-                ctx: self.ctx,
-                pd,
-                kind: MpKind::BioRead,
-            }),
-            _ => None,
-        };
+        let kind = cmd.multipart_kind();
         let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_cmd::try_from(cmd)?);
         let rc = unsafe { libosdp_sys::osdp_cp_submit_command(self.ctx, pd.as_c(), raw) };
         if rc < 0 {
             unsafe { RawSubmission::reclaim(raw) };
             return Err(Error::Rejected);
         }
-        Ok(Submission::new(slot, operation))
+        if matches!(kind, Some(MpKind::Piv | MpKind::GenAuth | MpKind::CrAuth)) {
+            let waiting = wants_reply.then(|| Rc::downgrade(&slot));
+            self.events.get().route_reply(pd, waiting);
+        }
+        let operation = kind.map(|kind| Operation {
+            ctx: self.ctx,
+            pd,
+            kind,
+        });
+        Ok((slot, operation))
     }
 
     /// Drop the commands queued for `pd` that have not been sent yet; each
@@ -259,13 +308,13 @@ impl ControlPanel {
     /// every refresh: once the queue is full, newer ones are dropped and
     /// counted by [`ControlPanel::dropped_events`].
     pub fn next_event(&self) -> Option<(PdIndex, CpEvent)> {
-        self.events.get().pop()
+        self.events.get().queue.pop()
     }
 
     /// How many events were dropped because the queue was full, counted
     /// since this context was built; it is never reset.
     pub fn dropped_events(&self) -> usize {
-        self.events.get().dropped()
+        self.events.get().queue.dropped()
     }
 
     /// The [`PdId`] that `pd` reported, or `None` while `pd` is offline:

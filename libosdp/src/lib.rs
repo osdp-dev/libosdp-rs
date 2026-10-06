@@ -81,6 +81,7 @@ mod pd;
 mod pdcap;
 mod pdid;
 mod pdinfo;
+mod piv;
 mod queue;
 mod status;
 mod submit;
@@ -102,6 +103,7 @@ pub use error::{CompletionError, Error, FileError, Nak};
 pub use metrics::Metrics;
 pub use notification::{MpKind, MpOutcome, MpPhase, Multipart, Notification, TrsSessionStatus};
 pub use pd::{CommandHandler, PeripheralDevice, Responder};
+pub use piv::{Challenge, PivReply, PivRequest};
 pub use status::{ReaderStatus, Status, StatusKind};
 pub use submit::Submission;
 

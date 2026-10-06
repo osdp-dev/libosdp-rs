@@ -7,7 +7,7 @@
 //! are specified by OSDP specification. This module is responsible to handling
 //! such commands though [`Command`].
 
-use crate::{BioMatchCommand, BioReadCommand, Error, StatusKind};
+use crate::{BioMatchCommand, BioReadCommand, Challenge, Error, MpKind, PivRequest, StatusKind};
 use alloc::vec::Vec;
 use core::time::Duration;
 
@@ -903,6 +903,32 @@ pub enum Command {
 
     /// Set the PD's local date and time
     TimeDate(TimeDateCommand),
+
+    /// Read a PIV data object from the smart card in the PD's reader; see
+    /// [`ControlPanel::piv_data`](crate::ControlPanel::piv_data)
+    PivData(PivRequest),
+
+    /// Have the smart card in the PD's reader answer a challenge; see
+    /// [`ControlPanel::general_auth`](crate::ControlPanel::general_auth)
+    GenAuth(Challenge),
+
+    /// Have the smart card in the PD's reader answer a challenge; see
+    /// [`ControlPanel::challenge_auth`](crate::ControlPanel::challenge_auth)
+    CrAuth(Challenge),
+}
+
+impl Command {
+    /// The kind of multi-part operation this command starts, if any.
+    pub(crate) fn multipart_kind(&self) -> Option<MpKind> {
+        match self {
+            Command::FileTx(_) => Some(MpKind::FileTransfer),
+            Command::PivData(_) => Some(MpKind::Piv),
+            Command::GenAuth(_) => Some(MpKind::GenAuth),
+            Command::CrAuth(_) => Some(MpKind::CrAuth),
+            Command::BioRead(_) => Some(MpKind::BioRead),
+            _ => None,
+        }
+    }
 }
 
 impl TryFrom<Command> for libosdp_sys::osdp_cmd {
@@ -1002,6 +1028,28 @@ impl TryFrom<Command> for libosdp_sys::osdp_cmd {
                     tdset: c.try_into()?,
                 },
             },
+            Command::PivData(c) => libosdp_sys::osdp_cmd {
+                _node: unsafe { core::mem::zeroed() },
+                id: libosdp_sys::osdp_cmd_e_OSDP_CMD_PIVDATA,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_cmd__bindgen_ty_1 { pivdata: c.into() },
+            },
+            Command::GenAuth(c) => libosdp_sys::osdp_cmd {
+                _node: unsafe { core::mem::zeroed() },
+                id: libosdp_sys::osdp_cmd_e_OSDP_CMD_GENAUTH,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_cmd__bindgen_ty_1 {
+                    auth: c.try_into()?,
+                },
+            },
+            Command::CrAuth(c) => libosdp_sys::osdp_cmd {
+                _node: unsafe { core::mem::zeroed() },
+                id: libosdp_sys::osdp_cmd_e_OSDP_CMD_CRAUTH,
+                flags: 0,
+                __bindgen_anon_1: libosdp_sys::osdp_cmd__bindgen_ty_1 {
+                    auth: c.try_into()?,
+                },
+            },
         })
     }
 }
@@ -1049,6 +1097,15 @@ impl TryFrom<libosdp_sys::osdp_cmd> for Command {
             )),
             libosdp_sys::osdp_cmd_e_OSDP_CMD_TDSET => Ok(Command::TimeDate(
                 unsafe { value.__bindgen_anon_1.tdset }.into(),
+            )),
+            libosdp_sys::osdp_cmd_e_OSDP_CMD_PIVDATA => Ok(Command::PivData(
+                unsafe { value.__bindgen_anon_1.pivdata }.into(),
+            )),
+            libosdp_sys::osdp_cmd_e_OSDP_CMD_GENAUTH => Ok(Command::GenAuth(
+                unsafe { value.__bindgen_anon_1.auth }.try_into()?,
+            )),
+            libosdp_sys::osdp_cmd_e_OSDP_CMD_CRAUTH => Ok(Command::CrAuth(
+                unsafe { value.__bindgen_anon_1.auth }.try_into()?,
             )),
             _ => Err(Error::Malformed("command id")),
         }

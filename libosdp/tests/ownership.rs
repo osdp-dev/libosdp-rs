@@ -8,12 +8,13 @@ mod common;
 
 use common::memory_channel::MemoryChannel;
 use libosdp::{
-    BioFormat, BioMatchCommand, BioReadCommand, BioReadReply, BioStatus, BioType, Buzzer,
-    BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
-    CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
-    FileTxCommand, Finalize, Flag, KeyPress, Metrics, MfgCommand, MfgReply, MfgStatus, MpKind,
-    MpOutcome, MpPhase, Nak, Notification, OpenMode, PdId, PdIndex, PdInfoBuilder,
-    PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission, TimeDateCommand,
+    Challenge, Multipart, PivReply, PivRequest, BioFormat, BioMatchCommand, BioReadCommand,
+    BioReadReply, BioStatus, BioType, Buzzer, BuzzerCommand, CapFunction, Capability, CardRead,
+    Channel, ChannelError, Command, CompletionError, ControlPanel, ControlPanelBuilder, CpEvent,
+    Error, Event, FileError, FileOps, FileTxCommand, Finalize, Flag, KeyPress, Metrics, MfgCommand,
+    MfgReply, MfgStatus, MpKind, MpOutcome, MpPhase, Nak, Notification, OpenMode, PdId, PdIndex,
+    PdInfoBuilder, PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
+    TimeDateCommand,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -1022,5 +1023,148 @@ fn metrics_count_since_they_were_last_taken() -> Result<()> {
     assert_eq!(cp.take_metrics(target), Metrics::default());
     assert_eq!(pd.take_metrics(), Metrics::default());
     Ok(())
+}
+
+fn smart_card_pair() -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
+    let (cp_bus, pd_bus) = MemoryChannel::new();
+    let pd = PeripheralDevice::new(
+        pd_info()?
+            .capability(Capability::new(CapFunction::CommunicationSecurity, 1, 1))
+            .capability(Capability::new(CapFunction::SmartCardSupport, 1, 1))
+            .secure_channel_key(KEY),
+        Box::new(pd_bus),
+    )?;
+    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
+    let target = builder.add_pd(
+        pd_info()?
+            .flag(Flag::EnableNotification)
+            .secure_channel_key(KEY),
+    )?;
+    let cp = builder.build()?;
+    refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
+    Ok((cp, target, pd))
+}
+
+fn certificate() -> PivReply {
+    PivReply {
+        data: (0..=199).collect(),
+    }
+}
+
+fn answer_smart_card_commands(pd: &PeripheralDevice) {
+    pd.set_command_handler(|cmd, reply: &mut Responder<'_>| {
+        let answer = match cmd {
+            Command::PivData(_) => Event::PivData(certificate()),
+            Command::GenAuth(challenge) => Event::GenAuth(PivReply {
+                data: challenge.data.iter().rev().copied().collect(),
+            }),
+            _ => return Ok(()),
+        };
+        reply.reply(answer).map_err(|_| Nak::Record)
+    });
+}
+
+fn request() -> PivRequest {
+    PivRequest {
+        object_id: [0x5F, 0xC1, 0x05],
+        element: 0x70,
+        offset: 0,
+    }
+}
+
+fn drain_events(cp: &ControlPanel) -> Vec<CpEvent> {
+    core::iter::from_fn(|| cp.next_event().map(|(_, item)| item)).collect()
+}
+
+#[test]
+fn piv_data_resolves_into_the_cards_reply() -> Result<()> {
+    let (cp, target, pd) = smart_card_pair()?;
+    answer_smart_card_commands(&pd);
+    let piv = cp.piv_data(target, request())?;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let reply = loop {
+        if let Some(status) = piv.status() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "PIV data never arrived");
+        cp.refresh();
+        pd.refresh();
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!(reply, Ok(certificate()));
+    assert!(!drain_events(&cp)
+        .iter()
+        .any(|item| matches!(item, CpEvent::Event(_))));
+
+    let challenge = Challenge {
+        algorithm: 0x11,
+        key: 0x9E,
+        data: vec![1, 2, 3, 4],
+    };
+    let auth = cp.general_auth(target, challenge)?;
+    refresh_until(&cp, &pd, || auth.status().is_some());
+    assert_eq!(
+        auth.status(),
+        Some(Ok(PivReply {
+            data: vec![4, 3, 2, 1]
+        }))
+    );
+    Ok(())
+}
+
+#[test]
+fn reply_to_a_dropped_handle_reaches_next_event() -> Result<()> {
+    let (cp, target, pd) = smart_card_pair()?;
+    answer_smart_card_commands(&pd);
+    drop(cp.piv_data(target, request())?);
+    let mut events = Vec::new();
+    refresh_until(&cp, &pd, || {
+        events.extend(drain_events(&cp));
+        events.contains(&CpEvent::Event(Event::PivData(certificate())))
+    });
+    Ok(())
+}
+
+#[test]
+fn one_smart_card_command_runs_at_a_time() -> Result<()> {
+    let (cp, target, pd) = smart_card_pair()?;
+    pd.set_command_handler(|_, _: &mut Responder<'_>| Ok(()));
+    let first = cp.piv_data(target, request())?;
+    assert!(matches!(
+        cp.piv_data(target, request()),
+        Err(Error::Rejected)
+    ));
+    assert_eq!(first.cancel(), Ok(()));
+    assert_eq!(
+        refresh_until_done_with(&cp, &pd, || first.status().map(|s| s.map(|_| ()))),
+        Err(CompletionError::Failed)
+    );
+    assert!(
+        drain_events(&cp).contains(&CpEvent::Notification(Notification::Multipart(Multipart {
+            kind: MpKind::Piv,
+            phase: MpPhase::Done(MpOutcome::Aborted),
+            object_id: 0x70,
+            offset: 0,
+            total: 0,
+        })))
+    );
+    Ok(())
+}
+
+fn refresh_until_done_with(
+    cp: &ControlPanel,
+    pd: &PeripheralDevice,
+    mut status: impl FnMut() -> Option<core::result::Result<(), CompletionError>>,
+) -> core::result::Result<(), CompletionError> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(status) = status() {
+            return status;
+        }
+        assert!(Instant::now() < deadline, "submission never completed");
+        cp.refresh();
+        pd.refresh();
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
