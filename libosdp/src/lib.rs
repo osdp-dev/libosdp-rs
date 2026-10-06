@@ -75,6 +75,7 @@ mod error;
 mod events;
 mod ffi;
 mod file;
+mod metrics;
 mod notification;
 mod pd;
 mod pdcap;
@@ -98,6 +99,7 @@ pub use bio::{
 };
 pub use cp::{ControlPanel, ControlPanelBuilder, CpEvent, PdIndex};
 pub use error::{CompletionError, Error, FileError, Nak};
+pub use metrics::Metrics;
 pub use notification::{MpKind, MpOutcome, MpPhase, Multipart, Notification, TrsSessionStatus};
 pub use pd::{CommandHandler, PeripheralDevice, Responder};
 pub use status::{ReaderStatus, Status, StatusKind};

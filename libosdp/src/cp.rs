@@ -8,7 +8,7 @@
 
 use crate::{
     busy::Busy, CapFunction, Capability, Channel, Command, Error, Event, FileOps, FileProgress,
-    Flag, MpKind, Notification, PdId, PdInfoBuilder, Submission,
+    Flag, Metrics, MpKind, Notification, PdId, PdInfoBuilder, Submission,
 };
 use crate::submit::Operation;
 use crate::ffi::{
@@ -340,6 +340,12 @@ impl ControlPanel {
     /// [`enable`](Self::enable).
     pub fn is_enabled(&self, pd: PdIndex) -> bool {
         unsafe { libosdp_sys::osdp_cp_is_pd_enabled(self.ctx, pd.as_c()) }
+    }
+
+    /// Take the link counters for `pd` and reset them, so each call returns
+    /// what happened since the previous one.
+    pub fn take_metrics(&self, pd: PdIndex) -> Metrics {
+        crate::metrics::take_metrics(self.ctx, pd.as_c())
     }
 
     /// Check whether `pd` is online.

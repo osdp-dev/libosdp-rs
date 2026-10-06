@@ -110,6 +110,9 @@ Release subject ## TODO
   range is refused with Error::InvalidArgument
 - cp: Take a PD off the bus and back with ControlPanel::disable and
   enable, and check which it is with is_enabled
+- metrics: Read a link's health counters -- packets, check errors, NAKs,
+  secure channel handshakes and failures, commands, events -- with
+  take_metrics on a ControlPanel or PeripheralDevice, which resets them
 
 ## Fixes
 

@@ -11,9 +11,9 @@ use libosdp::{
     BioFormat, BioMatchCommand, BioReadCommand, BioReadReply, BioStatus, BioType, Buzzer,
     BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
     CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
-    FileTxCommand, Finalize, Flag, KeyPress, MfgCommand, MfgReply, MfgStatus, MpKind, MpOutcome,
-    MpPhase, Nak, Notification, OpenMode, PdId, PdIndex, PdInfoBuilder, PeripheralDevice,
-    ReaderStatus, Responder, Status, StatusKind, Submission, TimeDateCommand,
+    FileTxCommand, Finalize, Flag, KeyPress, Metrics, MfgCommand, MfgReply, MfgStatus, MpKind,
+    MpOutcome, MpPhase, Nak, Notification, OpenMode, PdId, PdIndex, PdInfoBuilder,
+    PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission, TimeDateCommand,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -1055,6 +1055,21 @@ fn disabling_fails_the_command_in_flight_and_keeps_the_queue() -> Result<()> {
     assert_eq!(queued.status(), None);
     assert_eq!(cp.flush(target), 1);
     assert_eq!(queued.status(), Some(Err(CompletionError::Flushed)));
+    Ok(())
+}
+
+#[test]
+fn metrics_count_since_they_were_last_taken() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    pd.set_command_handler(|_, _: &mut Responder<'_>| Ok(()));
+    let submission = cp.submit(target, buzz())?;
+    assert_eq!(refresh_until_done(&cp, &pd, &submission), Ok(()));
+    let on_cp = cp.take_metrics(target);
+    assert!(on_cp.packets_sent > 0 && on_cp.packets_received > 0);
+    assert_eq!(on_cp.sc_handshakes, 1);
+    assert!(pd.take_metrics().commands >= 1);
+    assert_eq!(cp.take_metrics(target), Metrics::default());
+    assert_eq!(pd.take_metrics(), Metrics::default());
     Ok(())
 }
 

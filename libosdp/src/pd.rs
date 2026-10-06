@@ -14,7 +14,7 @@
 
 use crate::{
     busy::Busy, queue::DrainQueue, Capability, Channel, Command, Error, Event, FileOps,
-    FileProgress, Nak, Notification, PdInfoBuilder, Submission,
+    FileProgress, Metrics, Nak, Notification, PdInfoBuilder, Submission,
 };
 use crate::ffi::{
     callback::{pd_command_trampoline, CallbackSlot, PdCommandSlot, Shared},
@@ -259,6 +259,12 @@ impl PeripheralDevice {
             .get()
             .handler
             .replace(Box::new(handler));
+    }
+
+    /// Take the link counters and reset them, so each call returns what
+    /// happened since the previous one.
+    pub fn take_metrics(&self) -> Metrics {
+        crate::metrics::take_metrics(self.ctx, 0)
     }
 
     /// Check whether a CP is talking to this PD.
