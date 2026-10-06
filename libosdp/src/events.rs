@@ -20,6 +20,10 @@ use defmt::panic;
 
 /// Various card formats that a PD can support. This is sent to CP when a PD
 /// must report a card read
+///
+/// LibOSDP does not support OSDP's ASCII card format (osdp_FMT): a PD
+/// never sends it and a CP ignores it, so this type has no variant for it
+/// and a [`CardRead`]'s length is always in bits.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -77,11 +81,9 @@ pub struct CardRead {
     /// Format of the card that was read
     pub format: CardFormat,
 
-    /// The direction of the PD where the card read happened (some PDs have two
-    /// physical card readers to put on either side of a door).
-    ///
-    /// false - Forward
-    /// true - Backward
+    /// Read direction: `false` forward, `true` reverse. Only osdp_FMT
+    /// carries one, and LibOSDP does not support it: a PD ignores this
+    /// field when it sends a card read, and a CP always reports `false`.
     pub direction: bool,
 
     /// Number of valid data bits in [`CardRead::data`].
@@ -123,15 +125,18 @@ impl TryFrom<libosdp_sys::osdp_event_cardread> for CardRead {
 
     fn try_from(value: libosdp_sys::osdp_event_cardread) -> Result<Self> {
         let format = value.format.try_into()?;
-        let len = value.length as usize;
-        let (nr_bits, nr_bytes) = (len, len.div_ceil(8));
+        let nr_bits = value.length as usize;
+        let data = value
+            .data
+            .get(..nr_bits.div_ceil(8))
+            .ok_or(Error::Malformed("card data length"))?;
 
         Ok(CardRead {
             reader_no: value.reader_no,
             format,
             direction: value.direction == 1,
             nr_bits,
-            data: value.data[0..nr_bytes].to_vec(),
+            data: data.to_vec(),
         })
     }
 }
@@ -182,14 +187,18 @@ impl KeyPress {
     }
 }
 
-impl From<libosdp_sys::osdp_event_keypress> for KeyPress {
-    fn from(value: libosdp_sys::osdp_event_keypress) -> Self {
-        let n = value.length as usize;
-        let data = value.data[0..n].to_vec();
-        KeyPress {
+impl TryFrom<libosdp_sys::osdp_event_keypress> for KeyPress {
+    type Error = Error;
+
+    fn try_from(value: libosdp_sys::osdp_event_keypress) -> Result<Self> {
+        let data = usize::try_from(value.length)
+            .ok()
+            .and_then(|n| value.data.get(..n))
+            .ok_or(Error::Malformed("key press length"))?;
+        Ok(KeyPress {
             reader_no: value.reader_no,
-            data,
-        }
+            data: data.to_vec(),
+        })
     }
 }
 
@@ -222,16 +231,19 @@ pub struct MfgReply {
     pub data: Vec<u8>,
 }
 
-impl From<libosdp_sys::osdp_event_mfgrep> for MfgReply {
-    fn from(value: libosdp_sys::osdp_event_mfgrep) -> Self {
-        let n = value.length as usize;
-        let data = value.data[0..n].to_vec();
+impl TryFrom<libosdp_sys::osdp_event_mfgrep> for MfgReply {
+    type Error = Error;
+
+    fn try_from(value: libosdp_sys::osdp_event_mfgrep) -> Result<Self> {
+        let data = value
+            .data
+            .get(..value.length as usize)
+            .ok_or(Error::Malformed("manufacturer reply length"))?;
         let bytes = value.vendor_code.to_le_bytes();
-        let vendor_code: (u8, u8, u8) = (bytes[0], bytes[1], bytes[2]);
-        MfgReply {
-            vendor_code,
-            data,
-        }
+        Ok(MfgReply {
+            vendor_code: (bytes[0], bytes[1], bytes[2]),
+            data: data.to_vec(),
+        })
     }
 }
 
@@ -421,10 +433,10 @@ impl TryFrom<libosdp_sys::osdp_event> for Event {
                 Ok(Event::CardRead(data))
             }
             libosdp_sys::osdp_event_type_OSDP_EVENT_KEYPRESS => {
-                Ok(Event::KeyPress(unsafe { value.__bindgen_anon_1.keypress.into() }))
+                Ok(Event::KeyPress(unsafe { value.__bindgen_anon_1.keypress }.try_into()?))
             }
             libosdp_sys::osdp_event_type_OSDP_EVENT_MFGREP => {
-                Ok(Event::MfgReply(unsafe { value.__bindgen_anon_1.mfgrep.into() }))
+                Ok(Event::MfgReply(unsafe { value.__bindgen_anon_1.mfgrep }.try_into()?))
             }
             libosdp_sys::osdp_event_type_OSDP_EVENT_STATUS => {
                 let data = unsafe { value.__bindgen_anon_1.status.try_into() }?;
@@ -437,7 +449,8 @@ impl TryFrom<libosdp_sys::osdp_event> for Event {
 
 #[cfg(test)]
 mod tests {
-    use super::CardRead;
+    use super::{CardRead, Event, KeyPress, MfgReply};
+    use crate::Error;
     use libosdp_sys::{
         osdp_event_cardread, osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_UNSPECIFIED,
         osdp_event_cardread_format_e_OSDP_CARD_FMT_RAW_WIEGAND,
@@ -472,5 +485,26 @@ mod tests {
         assert_eq!(event_struct.data[1], 0xAA);
 
         assert_eq!(event, event_struct.try_into().unwrap());
+    }
+
+    #[test]
+    fn lengths_past_libosdp_buffers_are_malformed() {
+        let mut card: libosdp_sys::osdp_event = Event::CardRead(CardRead::new_raw(vec![1]))
+            .try_into()
+            .unwrap();
+        card.__bindgen_anon_1.cardread.length = u16::MAX;
+        let mut keys: libosdp_sys::osdp_event =
+            Event::KeyPress(KeyPress::new(vec![1])).try_into().unwrap();
+        keys.__bindgen_anon_1.keypress.length = -1;
+        let mut mfg: libosdp_sys::osdp_event =
+            Event::MfgReply(MfgReply::default()).try_into().unwrap();
+        mfg.__bindgen_anon_1.mfgrep.length = u8::MAX;
+        for (raw, reason) in [
+            (card, "card data length"),
+            (keys, "key press length"),
+            (mfg, "manufacturer reply length"),
+        ] {
+            assert_eq!(Event::try_from(raw), Err(Error::Malformed(reason)));
+        }
     }
 }

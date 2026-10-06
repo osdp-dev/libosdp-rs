@@ -77,6 +77,10 @@ Release subject ## TODO
   buffer with Error::TooLong, from submit and Responder::reply,
   instead of panicking. A CardRead with more bits than data is
   refused with Error::InvalidArgument
+- api: Refuse a command or event from LibOSDP whose length runs past its
+  buffer (KeySetCommand, MfgCommand, CardRead, KeyPress, MfgReply) with
+  Error::Malformed instead of panicking inside LibOSDP's callback, which
+  aborted the process
 
 ## Changes
 

@@ -695,14 +695,18 @@ impl KeySetCommand {
     }
 }
 
-impl From<libosdp_sys::osdp_cmd_keyset> for KeySetCommand {
-    fn from(value: libosdp_sys::osdp_cmd_keyset) -> Self {
-        let n = value.length as usize;
-        let data = value.data[0..n].to_vec();
-        KeySetCommand {
+impl TryFrom<libosdp_sys::osdp_cmd_keyset> for KeySetCommand {
+    type Error = Error;
+
+    fn try_from(value: libosdp_sys::osdp_cmd_keyset) -> Result<Self> {
+        let data = value
+            .data
+            .get(..value.length as usize)
+            .ok_or(Error::Malformed("key length"))?;
+        Ok(KeySetCommand {
             key_type: value.type_,
-            data,
-        }
+            data: data.to_vec(),
+        })
     }
 }
 
@@ -734,16 +738,19 @@ pub struct MfgCommand {
     pub data: Vec<u8>,
 }
 
-impl From<libosdp_sys::osdp_cmd_mfg> for MfgCommand {
-    fn from(value: libosdp_sys::osdp_cmd_mfg) -> Self {
-        let n = value.length as usize;
-        let data = value.data[0..n].to_vec();
+impl TryFrom<libosdp_sys::osdp_cmd_mfg> for MfgCommand {
+    type Error = Error;
+
+    fn try_from(value: libosdp_sys::osdp_cmd_mfg) -> Result<Self> {
+        let data = value
+            .data
+            .get(..value.length as usize)
+            .ok_or(Error::Malformed("manufacturer command length"))?;
         let bytes = value.vendor_code.to_le_bytes();
-        let vendor_code: (u8, u8, u8) = (bytes[0], bytes[1], bytes[2]);
-        MfgCommand {
-            vendor_code,
-            data,
-        }
+        Ok(MfgCommand {
+            vendor_code: (bytes[0], bytes[1], bytes[2]),
+            data: data.to_vec(),
+        })
     }
 }
 
@@ -940,10 +947,10 @@ impl TryFrom<libosdp_sys::osdp_cmd> for Command {
                 Ok(Command::ComSetDone(unsafe { value.__bindgen_anon_1.comset.into() }))
             }
             libosdp_sys::osdp_cmd_e_OSDP_CMD_KEYSET => {
-                Ok(Command::KeySet(unsafe { value.__bindgen_anon_1.keyset.into() }))
+                Ok(Command::KeySet(unsafe { value.__bindgen_anon_1.keyset }.try_into()?))
             }
             libosdp_sys::osdp_cmd_e_OSDP_CMD_MFG => {
-                Ok(Command::Mfg(unsafe { value.__bindgen_anon_1.mfg.into() }))
+                Ok(Command::Mfg(unsafe { value.__bindgen_anon_1.mfg }.try_into()?))
             }
             libosdp_sys::osdp_cmd_e_OSDP_CMD_FILE_TX => {
                 Ok(Command::FileTx(unsafe { value.__bindgen_anon_1.file_tx.into() }))
@@ -960,8 +967,8 @@ impl TryFrom<libosdp_sys::osdp_cmd> for Command {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Buzzer, BuzzerCommand, Command, Error, LedColor, LedCommand, LedParams, LedPermanent,
-        LedTemporary, MfgCommand, OutputAction, OutputCommand, TextCommand, TextMode,
+        Buzzer, BuzzerCommand, Command, Error, KeySetCommand, LedColor, LedCommand, LedParams,
+        LedPermanent, LedTemporary, MfgCommand, OutputAction, OutputCommand, TextCommand, TextMode,
     };
     use core::time::Duration;
     use libosdp_sys::osdp_cmd_mfg;
@@ -1125,8 +1132,22 @@ mod tests {
             .try_into()
             .unwrap();
         bad_text.__bindgen_anon_1.text.length = u8::MAX;
-        for raw in [bad_led, bad_output, bad_text] {
-            assert!(matches!(Command::try_from(raw), Err(Error::Malformed(_))));
+        let mut bad_keyset: libosdp_sys::osdp_cmd =
+            Command::KeySet(KeySetCommand::new_scbk([0; 16]))
+                .try_into()
+                .unwrap();
+        bad_keyset.__bindgen_anon_1.keyset.length = u8::MAX;
+        let mut bad_mfg: libosdp_sys::osdp_cmd =
+            Command::Mfg(MfgCommand::default()).try_into().unwrap();
+        bad_mfg.__bindgen_anon_1.mfg.length = u8::MAX;
+        for (raw, reason) in [
+            (bad_led, "LED temporary control code"),
+            (bad_output, "output control code"),
+            (bad_text, "text length"),
+            (bad_keyset, "key length"),
+            (bad_mfg, "manufacturer command length"),
+        ] {
+            assert_eq!(Command::try_from(raw), Err(Error::Malformed(reason)));
         }
     }
 
@@ -1153,6 +1174,6 @@ mod tests {
         assert_eq!(cmd_struct.data[0], 0x55);
         assert_eq!(cmd_struct.data[1], 0xAA);
 
-        assert_eq!(cmd, cmd_struct.into());
+        assert_eq!(cmd, cmd_struct.try_into().unwrap());
     }
 }

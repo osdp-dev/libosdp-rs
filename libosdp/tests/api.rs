@@ -4,8 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use libosdp::{
-    Buzzer, BuzzerCommand, Channel, ChannelError, Command, ControlPanelBuilder, Error,
-    FileError, Flag, PdInfoBuilder,
+    Buzzer, BuzzerCommand, CardRead, Channel, ChannelError, Command, ControlPanelBuilder, Error,
+    Event, FileError, Flag, KeyPress, KeySetCommand, PdInfoBuilder, PeripheralDevice,
 };
 
 struct Idle;
@@ -124,5 +124,29 @@ fn enforce_secure_cannot_be_cleared() -> Result<(), Error> {
         cp.clear_flags(pd, Flag::EnforceSecure),
         Err(Error::Rejected)
     );
+    Ok(())
+}
+
+#[test]
+fn oversized_payloads_are_refused_before_libosdp_sees_them() -> Result<(), Error> {
+    let mut builder = ControlPanelBuilder::new(Box::new(Idle));
+    let target = builder.add_pd(pd_at(101)?)?;
+    let cp = builder.build()?;
+    let mut keyset = KeySetCommand::new_scbk([0; 16]);
+    keyset.data = vec![0; 33];
+    assert!(matches!(
+        cp.submit(target, Command::KeySet(keyset)),
+        Err(Error::TooLong { max: 32 })
+    ));
+
+    let pd = PeripheralDevice::new(pd_at(101)?, Box::new(Idle))?;
+    assert!(matches!(
+        pd.submit(Event::KeyPress(KeyPress::new(vec![0; 65]))),
+        Err(Error::TooLong { max: 64 })
+    ));
+    assert!(matches!(
+        pd.submit(Event::CardRead(CardRead::new_raw(vec![0; 65]))),
+        Err(Error::TooLong { max: 64 })
+    ));
     Ok(())
 }
