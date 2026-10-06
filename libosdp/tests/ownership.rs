@@ -10,7 +10,7 @@ use common::memory_channel::MemoryChannel;
 use libosdp::{
     Buzzer, BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
     CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Error, Event, FileError, FileOps,
-    FileTxCommand, KeyPress, MfgCommand, MfgReply, Nak, PdId, PdIndex, PdInfoBuilder,
+    FileTxCommand, KeyPress, MfgCommand, MfgReply, Nak, OpenMode, PdId, PdIndex, PdInfoBuilder,
     PeripheralDevice, ReaderStatus, Responder, Status, StatusKind, Submission,
 };
 use std::sync::{
@@ -57,13 +57,13 @@ impl Channel for IdleChannel {
 struct NoFiles(#[allow(dead_code)] DropGuard);
 
 impl FileOps for NoFiles {
-    fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, FileError> {
+    fn open(&mut self, _: i32, _: OpenMode) -> core::result::Result<u32, FileError> {
         Err(FileError::NotFound)
     }
-    fn offset_read(&self, _: &mut [u8], _: u64) -> core::result::Result<usize, FileError> {
+    fn read(&mut self, _: &mut [u8], _: u32) -> core::result::Result<usize, FileError> {
         Ok(0)
     }
-    fn offset_write(&self, _: &[u8], _: u64) -> core::result::Result<usize, FileError> {
+    fn write(&mut self, _: &[u8], _: u32) -> core::result::Result<usize, FileError> {
         Ok(0)
     }
     fn close(&mut self) -> core::result::Result<(), FileError> {
@@ -349,7 +349,7 @@ struct RegistersFileOpsFromOpen {
 }
 
 impl FileOps for RegistersFileOpsFromOpen {
-    fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, FileError> {
+    fn open(&mut self, _: i32, _: OpenMode) -> core::result::Result<u32, FileError> {
         let replacement = Box::new(NoFiles(DropCounter::default().guard()));
         let result = CP.with(|cp| cp.get().unwrap().register_file_ops(self.target, replacement));
         NESTED_REGISTRATION.with(|slot| *slot.borrow_mut() = Some(result));
@@ -363,10 +363,10 @@ impl FileOps for RegistersFileOpsFromOpen {
         self.ballast.fill(1);
         Err(FileError::NotFound)
     }
-    fn offset_read(&self, _: &mut [u8], _: u64) -> core::result::Result<usize, FileError> {
+    fn read(&mut self, _: &mut [u8], _: u32) -> core::result::Result<usize, FileError> {
         Ok(0)
     }
-    fn offset_write(&self, _: &[u8], _: u64) -> core::result::Result<usize, FileError> {
+    fn write(&mut self, _: &[u8], _: u32) -> core::result::Result<usize, FileError> {
         Ok(0)
     }
     fn close(&mut self) -> core::result::Result<(), FileError> {

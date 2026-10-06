@@ -70,6 +70,12 @@ Release subject ## TODO
   advertise, and file_progress, which replaces file_transfer_status,
   returns a FileProgress { size, offset } of u32s, or None outside a
   transfer. is_sc_active is now is_secure
+- file: Reshape FileOps around LibOSDP 4.0's file ops: open(id,
+  OpenMode) returns the file size as a u32, read and write take &mut
+  self and a u32 offset (offset_read and offset_write are gone). A CP's
+  file ops are always opened to OpenMode::Read and a PD's to
+  OpenMode::Write { size }, so a PD receiving an empty file is no longer
+  told to read it
 
 ## Enhancements
 
@@ -82,8 +88,8 @@ Release subject ## TODO
 ## Fixes
 
 - ## TODO
-- file: Refuse a FileOps::offset_write that reports more bytes written
-  than it was given, and hand it LibOSDP's buffer without copying it
+- file: Refuse a FileOps::write that reports more bytes written than it
+  was given, and hand it LibOSDP's buffer without copying it
 - commands: Refuse text longer than LibOSDP's buffer with
   Error::TooLong instead of panicking
 - api: Refuse a command (MfgCommand, KeySetCommand) or event

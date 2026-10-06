@@ -19,7 +19,7 @@ use crate::{
 use crate::ffi::{
     callback::{pd_command_trampoline, CallbackSlot, PdCommandSlot, Shared},
     channel::OwnedChannel,
-    file::OwnedFileOps,
+    file::{FileRole, OwnedFileOps},
     log::pd_log_handler,
     submit::{pd_event_complete, RawSubmission},
 };
@@ -276,7 +276,7 @@ impl PeripheralDevice {
         let Some(_busy) = Busy::enter(&self.busy) else {
             return Err(Error::Rejected);
         };
-        let fops = OwnedFileOps::new(fops);
+        let fops = OwnedFileOps::new(fops, FileRole::Receiver);
         let raw = fops.as_raw();
         let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, 0, &raw) };
         if rc < 0 {

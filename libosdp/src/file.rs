@@ -18,31 +18,62 @@ pub struct FileProgress {
     pub offset: u32,
 }
 
+/// Which way a file is opened.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum OpenMode {
+    /// To be read and sent: a CP sending a file to a PD.
+    Read,
+    /// To be received and written: a PD receiving a file of `size` bytes
+    /// from the CP.
+    Write {
+        /// Size of the incoming file, as the CP announced it.
+        size: u32,
+    },
+}
+
 /// File operations handler trait. Any type that implements this trait can be
 /// registered with [`crate::ControlPanel::register_file_ops`] or
 /// [`crate::PeripheralDevice::register_file_ops`].
+///
+/// LibOSDP calls these from inside the context's `refresh()`, from
+/// [`ControlPanel::submit`](crate::ControlPanel::submit) when it starts a
+/// transfer, and `close` from `register_file_ops` when it replaces ops with a
+/// file open, and when the context is dropped, so they must return promptly.
 ///
 /// Implementors are moved into a `Send` context, so they must be `Send`:
 ///
 /// ```compile_fail
 /// struct NotSend(std::rc::Rc<()>);
 /// impl libosdp::FileOps for NotSend {
-///     fn open(&mut self, _: i32, _: bool) -> Result<usize, libosdp::FileError> { Ok(0) }
-///     fn offset_read(&self, _: &mut [u8], _: u64) -> Result<usize, libosdp::FileError> { Ok(0) }
-///     fn offset_write(&self, _: &[u8], _: u64) -> Result<usize, libosdp::FileError> { Ok(0) }
-///     fn close(&mut self) -> Result<(), libosdp::FileError> { Ok(()) }
+///     fn open(&mut self, _: i32, _: libosdp::OpenMode) -> Result<u32, libosdp::FileError> {
+///         Ok(0)
+///     }
+///     fn read(&mut self, _: &mut [u8], _: u32) -> Result<usize, libosdp::FileError> {
+///         Ok(0)
+///     }
+///     fn write(&mut self, _: &[u8], _: u32) -> Result<usize, libosdp::FileError> {
+///         Ok(0)
+///     }
+///     fn close(&mut self) -> Result<(), libosdp::FileError> {
+///         Ok(())
+///     }
 /// }
 /// ```
 pub trait FileOps: Send {
-    /// Open a file, with pre-agreed File-ID `id`; returns the size of the
-    /// file that was opened.
-    fn open(&mut self, id: i32, read_only: bool) -> Result<usize>;
-    /// Read bytes into buffer `buf` from offset `off` of the file; returns
-    /// number of bytes read.
-    fn offset_read(&self, buf: &mut [u8], off: u64) -> Result<usize>;
-    /// Write bytes from buffer `buf` at offset `off` of the file; returns
-    /// number of bytes written.
-    fn offset_write(&self, buf: &[u8], off: u64) -> Result<usize>;
-    /// Close the currently open file.
+    /// Open the file with the pre-agreed File-ID `id`. When opening to
+    /// [`OpenMode::Read`], return the size of the file; when opening to
+    /// [`OpenMode::Write`], the returned size is not used.
+    fn open(&mut self, id: i32, mode: OpenMode) -> Result<u32>;
+
+    /// Read into `buf` from `offset` bytes into the open file; returns the
+    /// number of bytes read, at most `buf.len()`.
+    fn read(&mut self, buf: &mut [u8], offset: u32) -> Result<usize>;
+
+    /// Write `buf` at `offset` bytes into the open file; returns the number
+    /// of bytes written. Writing less than all of `buf` fails the transfer.
+    fn write(&mut self, buf: &[u8], offset: u32) -> Result<usize>;
+
+    /// Close the open file.
     fn close(&mut self) -> Result<()>;
 }

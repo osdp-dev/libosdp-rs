@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::FileOps;
+use crate::{FileOps, OpenMode};
 use alloc::boxed::Box;
 use core::ffi::c_void;
 #[cfg(feature = "defmt")]
@@ -11,14 +11,43 @@ use defmt::error;
 #[cfg(all(feature = "log", not(feature = "defmt")))]
 use log::error;
 
+/// Which end of a transfer a context's file ops serve. A CP only ever sends
+/// files and a PD only ever receives them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FileRole {
+    Sender,
+    Receiver,
+}
+
+/// What LibOSDP's `arg` points to.
+struct FileOpsArg {
+    ops: Box<dyn FileOps>,
+    role: FileRole,
+}
+
+/// # Safety
+///
+/// `data` is the `arg` of an [`OwnedFileOps`] that is still alive, and no
+/// other reference to it is live.
+unsafe fn file_ops_arg<'a>(data: *mut c_void) -> &'a mut FileOpsArg {
+    unsafe { &mut *(data as *mut FileOpsArg) }
+}
+
 unsafe extern "C" fn file_open(data: *mut c_void, file_id: i32, size: *mut u32) -> i32 {
-    let ctx: *mut Box<dyn FileOps> = data as *mut _;
-    let ctx = ctx.as_mut().unwrap();
-    let read_only = *size == 0;
-    match ctx.open(file_id, read_only) {
+    if size.is_null() {
+        return -1;
+    }
+    let arg = unsafe { file_ops_arg(data) };
+    let mode = match arg.role {
+        FileRole::Sender => OpenMode::Read,
+        FileRole::Receiver => OpenMode::Write {
+            size: unsafe { *size },
+        },
+    };
+    match arg.ops.open(file_id, mode) {
         Ok(file_size) => {
-            if read_only {
-                *size = file_size as u32;
+            if mode == OpenMode::Read {
+                unsafe { *size = file_size };
             }
             0
         }
@@ -34,16 +63,18 @@ unsafe extern "C" fn file_read(data: *mut c_void, buf: *mut c_void, size: u32, o
     if buf.is_null() {
         return -1;
     }
-    let ctx = unsafe { &*(data as *const Box<dyn FileOps>) };
+    let arg = unsafe { file_ops_arg(data) };
     let buf = unsafe { core::slice::from_raw_parts_mut(buf as *mut u8, size as usize) };
-    match ctx.offset_read(buf, offset as u64) {
-        Ok(len) => {
-            if len > buf.len() {
-                #[cfg(any(feature = "log", feature = "defmt"))]
-                error!("file_read: callback returned {} bytes for buffer of size {}", len, buf.len());
-                return -1;
-            }
-            len as i32
+    match arg.ops.read(buf, offset) {
+        Ok(len) if len <= buf.len() => len as i32,
+        Ok(_len) => {
+            #[cfg(any(feature = "log", feature = "defmt"))]
+            error!(
+                "file_read: callback returned {} bytes for buffer of size {}",
+                _len,
+                buf.len()
+            );
+            -1
         }
         Err(_e) => {
             #[cfg(any(feature = "log", feature = "defmt"))]
@@ -62,16 +93,14 @@ unsafe extern "C" fn file_write(
     if buf.is_null() {
         return -1;
     }
-    let ctx = unsafe { &*(data as *const Box<dyn FileOps>) };
+    let arg = unsafe { file_ops_arg(data) };
     let buf = unsafe { core::slice::from_raw_parts(buf as *const u8, size as usize) };
-    match ctx.offset_write(buf, offset as u64) {
-        Ok(len) => {
-            if len > buf.len() {
-                #[cfg(any(feature = "log", feature = "defmt"))]
-                error!("file_write: callback wrote {} bytes of {}", len, buf.len());
-                return -1;
-            }
-            len as i32
+    match arg.ops.write(buf, offset) {
+        Ok(len) if len <= buf.len() => len as i32,
+        Ok(_len) => {
+            #[cfg(any(feature = "log", feature = "defmt"))]
+            error!("file_write: callback wrote {} bytes of {}", _len, buf.len());
+            -1
         }
         Err(_e) => {
             #[cfg(any(feature = "log", feature = "defmt"))]
@@ -82,9 +111,8 @@ unsafe extern "C" fn file_write(
 }
 
 unsafe extern "C" fn file_close(data: *mut c_void) -> i32 {
-    let ctx: *mut Box<dyn FileOps> = data as *mut _;
-    let ctx = ctx.as_mut().unwrap();
-    match ctx.close() {
+    let arg = unsafe { file_ops_arg(data) };
+    match arg.ops.close() {
         Ok(_) => 0,
         Err(_e) => {
             #[cfg(any(feature = "log", feature = "defmt"))]
@@ -96,14 +124,14 @@ unsafe extern "C" fn file_close(data: *mut c_void) -> i32 {
 
 /// File ops whose box is shared with LibOSDP; freed when this is dropped,
 /// which must happen only after LibOSDP stops using it.
-pub(crate) struct OwnedFileOps(*mut Box<dyn FileOps>);
+pub(crate) struct OwnedFileOps(*mut FileOpsArg);
 
 // The box holds a dyn FileOps, and FileOps: Send.
 unsafe impl Send for OwnedFileOps {}
 
 impl OwnedFileOps {
-    pub(crate) fn new(ops: Box<dyn FileOps>) -> Self {
-        Self(Box::into_raw(Box::new(ops)))
+    pub(crate) fn new(ops: Box<dyn FileOps>, role: FileRole) -> Self {
+        Self(Box::into_raw(Box::new(FileOpsArg { ops, role })))
     }
 
     pub(crate) fn data(&self) -> *mut c_void {
@@ -137,70 +165,100 @@ impl core::fmt::Debug for OwnedFileOps {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::FileError;
 
-    struct FailingRead;
+    #[derive(Default)]
+    struct Scripted {
+        expect_open: Option<OpenMode>,
+        read: Option<core::result::Result<usize, FileError>>,
+        written: Option<core::result::Result<usize, FileError>>,
+    }
 
-    impl FileOps for FailingRead {
-        fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, crate::FileError> {
-            Ok(0)
+    impl FileOps for Scripted {
+        fn open(&mut self, _: i32, mode: OpenMode) -> core::result::Result<u32, FileError> {
+            match self.expect_open {
+                Some(expected) if expected != mode => Err(FileError::Io),
+                _ => Ok(1234),
+            }
         }
-        fn offset_read(&self, _: &mut [u8], _: u64) -> core::result::Result<usize, crate::FileError> {
-            Err(crate::FileError::Io)
+        fn read(&mut self, buf: &mut [u8], _: u32) -> core::result::Result<usize, FileError> {
+            self.read.unwrap_or(Ok(buf.len()))
         }
-        fn offset_write(&self, _: &[u8], _: u64) -> core::result::Result<usize, crate::FileError> {
-            Ok(0)
+        fn write(&mut self, buf: &[u8], _: u32) -> core::result::Result<usize, FileError> {
+            self.written.unwrap_or(Ok(buf.len()))
         }
-        fn close(&mut self) -> core::result::Result<(), crate::FileError> {
+        fn close(&mut self) -> core::result::Result<(), FileError> {
             Ok(())
         }
     }
 
-    struct OverReportingRead;
+    fn owned(ops: Scripted, role: FileRole) -> OwnedFileOps {
+        OwnedFileOps::new(Box::new(ops), role)
+    }
 
-    impl FileOps for OverReportingRead {
-        fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, crate::FileError> {
-            Ok(0)
-        }
-        fn offset_read(&self, buf: &mut [u8], _: u64) -> core::result::Result<usize, crate::FileError> {
-            Ok(buf.len() + 1)
-        }
-        fn offset_write(&self, _: &[u8], _: u64) -> core::result::Result<usize, crate::FileError> {
-            Ok(0)
-        }
-        fn close(&mut self) -> core::result::Result<(), crate::FileError> {
-            Ok(())
-        }
+    #[test]
+    fn open_reads_on_the_sender_and_writes_on_the_receiver() {
+        let sender = owned(
+            Scripted {
+                expect_open: Some(OpenMode::Read),
+                ..Scripted::default()
+            },
+            FileRole::Sender,
+        );
+        let mut size = 0u32;
+        assert_eq!(unsafe { file_open(sender.data(), 1, &mut size) }, 0);
+        assert_eq!(size, 1234);
+
+        let receiver = owned(
+            Scripted {
+                expect_open: Some(OpenMode::Write { size: 0 }),
+                ..Scripted::default()
+            },
+            FileRole::Receiver,
+        );
+        let mut size = 0u32;
+        assert_eq!(unsafe { file_open(receiver.data(), 1, &mut size) }, 0);
+        assert_eq!(size, 0);
     }
 
     #[test]
     fn failed_read_reports_error_and_writes_nothing() {
-        let ops = OwnedFileOps::new(Box::new(FailingRead));
+        let ops = owned(
+            Scripted {
+                read: Some(Err(FileError::Io)),
+                ..Scripted::default()
+            },
+            FileRole::Sender,
+        );
         let mut buf = [0xEEu8; 8];
         let rc = unsafe { file_read(ops.data(), buf.as_mut_ptr().cast(), 8u32, 0u32) };
         assert_eq!(rc, -1);
         assert_eq!(buf, [0xEE; 8]);
     }
 
-    struct OverReportingWrite;
-
-    impl FileOps for OverReportingWrite {
-        fn open(&mut self, _: i32, _: bool) -> core::result::Result<usize, crate::FileError> {
-            Ok(0)
-        }
-        fn offset_read(&self, _: &mut [u8], _: u64) -> core::result::Result<usize, crate::FileError> {
-            Ok(0)
-        }
-        fn offset_write(&self, buf: &[u8], _: u64) -> core::result::Result<usize, crate::FileError> {
-            Ok(buf.len() + 1)
-        }
-        fn close(&mut self) -> core::result::Result<(), crate::FileError> {
-            Ok(())
-        }
+    #[test]
+    fn file_read_rejects_over_reported_count() {
+        let ops = owned(
+            Scripted {
+                read: Some(Ok(9)),
+                ..Scripted::default()
+            },
+            FileRole::Sender,
+        );
+        let mut buf = [0xEEu8; 8];
+        let rc = unsafe { file_read(ops.data(), buf.as_mut_ptr().cast(), 8u32, 0u32) };
+        assert_eq!(rc, -1);
     }
 
     #[test]
     fn file_write_rejects_over_reported_count() {
-        let ops = OwnedFileOps::new(Box::new(OverReportingWrite));
+        let ops = owned(
+            Scripted {
+                written: Some(Ok(9)),
+                ..Scripted::default()
+            },
+            FileRole::Receiver,
+        );
         let buf = [0x55u8; 8];
         let rc = unsafe { file_write(ops.data(), buf.as_ptr().cast(), 8u32, 0u32) };
         assert_eq!(rc, -1);
@@ -208,16 +266,8 @@ mod tests {
 
     #[test]
     fn file_write_rejects_a_null_buffer() {
-        let ops = OwnedFileOps::new(Box::new(OverReportingWrite));
+        let ops = owned(Scripted::default(), FileRole::Receiver);
         let rc = unsafe { file_write(ops.data(), core::ptr::null(), 8u32, 0u32) };
-        assert_eq!(rc, -1);
-    }
-
-    #[test]
-    fn file_read_rejects_over_reported_count() {
-        let ops = OwnedFileOps::new(Box::new(OverReportingRead));
-        let mut buf = [0xEEu8; 8];
-        let rc = unsafe { file_read(ops.data(), buf.as_mut_ptr().cast(), 8u32, 0u32) };
         assert_eq!(rc, -1);
     }
 }

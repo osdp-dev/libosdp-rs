@@ -13,7 +13,7 @@ use crate::{
 use crate::ffi::{
     callback::{cp_event_trampoline, CpEventQueue, Shared},
     channel::OwnedChannel,
-    file::OwnedFileOps,
+    file::{FileRole, OwnedFileOps},
     log::cp_log_handler,
     submit::{cp_command_complete, RawSubmission},
 };
@@ -327,7 +327,7 @@ impl ControlPanel {
         let Some(_busy) = Busy::enter(&self.busy) else {
             return Err(Error::Rejected);
         };
-        let fops = OwnedFileOps::new(fops);
+        let fops = OwnedFileOps::new(fops, FileRole::Sender);
         let raw = fops.as_raw();
         let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, pd.as_c(), &raw) };
         if rc < 0 {

@@ -8,7 +8,7 @@ mod common;
 type Result<T> = core::result::Result<T, libosdp::Error>;
 
 use core::time::Duration;
-use libosdp::{FileError, Command, FileTxCommand, FileOps};
+use libosdp::{Command, FileError, FileOps, FileTxCommand, OpenMode};
 use rand::RngExt;
 use std::{
     cmp,
@@ -45,45 +45,44 @@ impl OsdpFileManager {
 }
 
 impl FileOps for OsdpFileManager {
-    fn open(&mut self, id: i32, read_only: bool) -> core::result::Result<usize, FileError> {
+    fn open(&mut self, id: i32, mode: OpenMode) -> core::result::Result<u32, FileError> {
         let path = self.files.get(&id).ok_or(FileError::NotFound)?;
         log::debug!("File {:?}", path);
-        let file = if read_only {
-            File::open(path.as_os_str())?
-        } else {
-            File::create(path.as_os_str())?
+        let file = match mode {
+            OpenMode::Read => File::open(path.as_os_str())?,
+            OpenMode::Write { .. } => File::create(path.as_os_str())?,
         };
-        let size = file.metadata()?.len() as usize;
+        let size = u32::try_from(file.metadata()?.len()).map_err(|_| FileError::Io)?;
         self.file = Some(file);
         Ok(size)
     }
 
-    fn offset_read(&self, buf: &mut [u8], off: u64) -> core::result::Result<usize, FileError> {
+    fn read(&mut self, buf: &mut [u8], off: u32) -> core::result::Result<usize, FileError> {
         let file = self.file.as_ref().ok_or(FileError::NotOpen)?;
 
         #[cfg(not(target_os = "windows"))]
-        let r = file.read_at(buf, off)?;
+        let r = file.read_at(buf, off.into())?;
 
         #[cfg(target_os = "windows")]
-        let r = file.seek_read(buf, off)?;
+        let r = file.seek_read(buf, off.into())?;
 
         Ok(r)
     }
 
-    fn offset_write(&self, buf: &[u8], off: u64) -> core::result::Result<usize, FileError> {
+    fn write(&mut self, buf: &[u8], off: u32) -> core::result::Result<usize, FileError> {
         let file = self.file.as_ref().ok_or(FileError::NotOpen)?;
 
         #[cfg(not(target_os = "windows"))]
-        let r = file.write_at(buf, off)?;
+        let r = file.write_at(buf, off.into())?;
 
         #[cfg(target_os = "windows")]
-        let r = file.seek_write(buf, off)?;
+        let r = file.seek_write(buf, off.into())?;
 
         Ok(r)
     }
 
     fn close(&mut self) -> core::result::Result<(), FileError> {
-        let _ = self.file.take().unwrap();
+        self.file = None;
         Ok(())
     }
 }

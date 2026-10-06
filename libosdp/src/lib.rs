@@ -86,7 +86,7 @@ mod submit;
 pub use channel::*;
 pub use commands::*;
 pub use events::*;
-pub use file::{FileOps, FileProgress};
+pub use file::{FileOps, FileProgress, OpenMode};
 pub use pdcap::{CapFunction, Capability};
 pub use pdid::*;
 pub use pdinfo::*;
