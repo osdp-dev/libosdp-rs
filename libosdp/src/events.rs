@@ -15,9 +15,6 @@ use super::ConvertEndian;
 
 type Result<T> = core::result::Result<T, Error>;
 
-#[cfg(feature = "defmt")]
-use defmt::panic;
-
 /// Various card formats that a PD can support. This is sent to CP when a PD
 /// must report a card read
 ///

@@ -45,6 +45,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
       - name: Cargo check no-std
         run: cargo check --package libosdp --target thumbv6m-none-eabi --no-default-features
+      - name: Cargo check no-std with defmt
+        run: cargo check --package libosdp --target thumbv6m-none-eabi --no-default-features --features defmt
       - name: Cargo check TRS
         run: cargo check --package libosdp-sys --features trs
       - name: Cargo check TRS no-std
