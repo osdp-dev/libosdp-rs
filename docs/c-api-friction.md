@@ -40,16 +40,24 @@ but not landed).
   libosdp-rs returns a `Submission` from `submit` whose `status()`
   reports that outcome.
 
-## FLUSHED and ABORTED completions fire during teardown
+## Completions fire inside the flush and teardown loops
 
-- **Symptom.** `FLUSHED` and `ABORTED` completions run inside the flush
-  and teardown drain loops. Application code reached from them could
-  call back into the context while it was being torn down.
-- **Cause.** Nothing stopped an `osdp_*` call made from inside teardown.
-- **Decision.** Refuse such calls in C rather than document a
-  restriction for every binding.
-- **Resolution.** Resolved upstream: 618a555 refuses `osdp_*` calls made
-  during teardown.
+- **Symptom.** `FLUSHED` completions run inside
+  `osdp_cp_flush_commands()` and `osdp_pd_flush_events()`, and
+  `ABORTED` ones inside teardown. Application code reached from them
+  could call back into the context while it was being drained or torn
+  down.
+- **Cause.** Nothing stopped an `osdp_*` call made from inside
+  teardown. Re-entry from a flush was already safe: the queue is
+  detached before it is drained (bb6c7d7), so a submission made from a
+  `FLUSHED` completion joins a fresh queue.
+- **Decision.** Refuse calls made during teardown in C rather than
+  document a restriction for every binding; leave the flush loop as it
+  is.
+- **Resolution.** Resolved upstream: 618a555 refuses `osdp_*` calls
+  made during teardown, and af6ae1b extends that to refresh.
+  libosdp-rs runs no application code from a completion either way; it
+  only records the outcome for the `Submission`.
 
 ## One channel per context
 
@@ -120,3 +128,33 @@ but not landed).
 - **Decision.** Rust closes its channel once, when the context drops;
   propose the doc fix.
 - **Resolution.** Open. Proposed upstream: fix the comment.
+
+## osdp_cp_add_pd() moves PDs under running operations
+
+- **Symptom.** `osdp_cp_add_pd()` copies the PD array into a larger
+  one and frees the old one. A file transfer, PIV, authenticate or
+  multi-part biometric operation running on an existing PD keeps a
+  pointer to that PD's old slot, and uses it when it next reports
+  progress or completes. Called from inside a callback during refresh,
+  it also frees the PD the refresh loop is working on.
+- **Cause.** The feature engines bind their PD by address when an
+  operation opens, and nothing re-binds them after the move; nested
+  calls are not refused (see the entry on calls made from callbacks).
+- **Decision.** Fix upstream before binding `osdp_cp_add_pd()`: re-bind
+  the engines after the move, and refuse the call from inside a
+  callback.
+- **Resolution.** Open. libosdp-rs does not expose adding a PD to a
+  running `ControlPanel` until the fix is vendored.
+
+## PD ID and capabilities read the same before and after the PD reports them
+
+- **Symptom.** `osdp_cp_get_pd_id()` and `osdp_cp_get_capability()`
+  return 0 and a zeroed record for a PD that has never come online, the
+  same as for a PD that reported zeros.
+- **Cause.** The records are filled during the PD's INIT handshake, and
+  nothing marks them as filled.
+- **Decision.** Accepted. The handshake completes before a PD is
+  reported online, so a record read while the PD is online is current.
+- **Resolution.** libosdp-rs returns `None` from `pd_id` and
+  `capability` while the PD is offline, and from `capability` for a
+  function the PD did not advertise.
