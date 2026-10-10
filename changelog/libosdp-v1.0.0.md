@@ -135,6 +135,9 @@ Release subject ## TODO
   ControlPanel::trs_scan_enable, at a TrsScan cadence, and
   trs_scan_disable; max_apdu_len says how large a C-APDU the link
   carries
+- pd: Responder::reply refuses a status with the wrong number of entries
+  for the PD's capabilities with Error::Rejected, rather than LibOSDP
+  silently answering the CP with a NAK
 
 ## Fixes
 

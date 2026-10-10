@@ -98,22 +98,20 @@ impl Responder<'_> {
     /// [`Event::Status`] of the requested kind to a [`Command::Status`].
     ///
     /// A status of another kind than the one queried is refused with
-    /// [`Error::InvalidArgument`]. A status must carry one entry for every
-    /// entity of its kind the PD advertises; LibOSDP refuses the CP's query
-    /// with a NAK otherwise. Any other event joins the PD's event
-    /// queue: LibOSDP sends it inline, as the reply to this command, only
-    /// when it answers the command and is at the head of that queue.
-    /// Otherwise it goes out as the response to a later poll.
+    /// [`Error::InvalidArgument`], one that does not carry exactly one entry
+    /// for every entity of its kind the PD advertises with
+    /// [`Error::Rejected`], and one with more than 64 entries with
+    /// [`Error::TooLong`]. Every reply, a status included, joins the PD's
+    /// event queue: LibOSDP sends it inline, as the reply to this command,
+    /// only when it answers the command and is at the head of that queue.
+    /// Otherwise it goes out as the response to a later poll; a status that
+    /// waits this way leaves the query answered with a NAK.
     pub fn reply(&mut self, event: Event) -> Result<()> {
-        let cmd = unsafe { &mut *self.cmd };
-        if cmd.id == libosdp_sys::osdp_cmd_e_OSDP_CMD_STATUS {
-            if let Event::Status(status) = event {
-                let query = unsafe { &mut cmd.__bindgen_anon_1.status };
-                if query.type_ != status.kind().into() {
-                    return Err(Error::InvalidArgument("status reply of another kind"));
-                }
-                *query = status.try_into()?;
-                return Ok(());
+        let cmd = unsafe { &*self.cmd };
+        if let (libosdp_sys::osdp_cmd_e_OSDP_CMD_STATUS, Event::Status(status)) = (cmd.id, &event) {
+            let query = unsafe { cmd.__bindgen_anon_1.status }.type_;
+            if query != status.kind().into() {
+                return Err(Error::InvalidArgument("status reply of another kind"));
             }
         }
         let (raw, _) = RawSubmission::into_raw(libosdp_sys::osdp_event::try_from(event)?);

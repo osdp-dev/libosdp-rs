@@ -659,12 +659,17 @@ fn status_reply_of_another_kind_is_refused() -> Result<()> {
 }
 
 #[test]
-fn status_with_an_entry_per_reader_the_pd_lacks_is_naked() -> Result<()> {
+fn status_with_an_entry_per_reader_the_pd_lacks_is_rejected() -> Result<()> {
     let (cp, target, pd) = secure_pair()?;
-    pd.set_command_handler(|cmd, reply: &mut Responder<'_>| match cmd {
-        Command::Status(StatusKind::Reader) => reply
-            .reply(Event::Status(Status::Reader(vec![ReaderStatus::Normal])))
-            .map_err(|_| Nak::Record),
+    let replied = Arc::new(Mutex::new(None));
+    let seen = replied.clone();
+    pd.set_command_handler(move |cmd, reply: &mut Responder<'_>| match cmd {
+        Command::Status(StatusKind::Reader) => {
+            let status = Status::Reader(vec![ReaderStatus::Normal]);
+            let result = reply.reply(Event::Status(status));
+            *seen.lock().unwrap() = Some(result);
+            result.map_err(|_| Nak::Record)
+        }
         _ => Ok(()),
     });
     let submission = cp.submit(target, Command::Status(StatusKind::Reader))?;
@@ -672,6 +677,7 @@ fn status_with_an_entry_per_reader_the_pd_lacks_is_naked() -> Result<()> {
         refresh_until_done(&cp, &pd, &submission),
         Err(CompletionError::Failed)
     );
+    assert_eq!(*replied.lock().unwrap(), Some(Err(Error::Rejected)));
     Ok(())
 }
 
