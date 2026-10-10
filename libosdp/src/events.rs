@@ -312,6 +312,7 @@ impl TryFrom<MfgStatus> for libosdp_sys::osdp_event_mfgstat {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum Event {
     /// Event that describes card read activity on the PD
     CardRead(CardRead),

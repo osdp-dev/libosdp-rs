@@ -85,6 +85,10 @@ Release subject ## TODO
 - file: Cancel a file transfer with Submission::cancel on the submission
   that started it. FileTxCommand::flags and OSDP_CMD_FILE_TX_FLAG_CANCEL
   are gone: LibOSDP 4.0 no longer honours the flag
+- api: Mark Command, Event, MpKind, TrsCommand, TrsReply and
+  TrsSessionStatus non-exhaustive, as Notification is: LibOSDP adds
+  commands, replies and operations as it gains features, so a match on
+  them outside this crate needs a wildcard arm
 
 ## Enhancements
 

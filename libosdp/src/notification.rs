@@ -17,6 +17,7 @@ type Result<T> = core::result::Result<T, Error>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum MpKind {
     /// A file transfer.
     FileTransfer,
@@ -140,6 +141,7 @@ pub struct Multipart {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum TrsSessionStatus {
     /// The reader is in transparent mode; card commands flow.
     Opened,

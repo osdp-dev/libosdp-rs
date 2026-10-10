@@ -221,6 +221,7 @@ impl TryFrom<PinEntry> for libosdp_sys::osdp_trs_pin_entry {
 /// [`CommandHandler`]: crate::CommandHandler
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum TrsCommand {
     /// Open a card session.
     Start,
@@ -354,6 +355,7 @@ pub struct PinResult {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum TrsReply {
     /// A card entered the field.
     CardInfo(CardInfo),

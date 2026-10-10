@@ -865,6 +865,7 @@ impl TryFrom<TimeDateCommand> for libosdp_sys::osdp_cmd_tdset {
 /// in this enum are specified by OSDP specification.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum Command {
     /// Command to control the behavior of it’s on-board LEDs
     Led(LedCommand),
