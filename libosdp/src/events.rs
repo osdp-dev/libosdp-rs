@@ -8,7 +8,7 @@
 //! etc.,). They do this by creating an "event" and sending it to the CP. This
 //! module is responsible to handling such events though [`Event`].
 
-use crate::{BioMatchReply, BioReadReply, Error, PivReply, Status, TrsReply};
+use crate::{copy_into, BioMatchReply, BioReadReply, Error, PivReply, Status, TrsReply};
 use alloc::vec::Vec;
 
 use super::ConvertEndian;
@@ -145,14 +145,11 @@ impl TryFrom<CardRead> for libosdp_sys::osdp_event_cardread {
     type Error = Error;
 
     fn try_from(value: CardRead) -> Result<Self> {
-        let mut data = [0; libosdp_sys::OSDP_EVENT_CARDREAD_MAX_DATALEN as usize];
-        if value.data.len() > data.len() {
-            return Err(Error::TooLong { max: data.len() });
-        }
+        let data =
+            copy_into::<{ libosdp_sys::OSDP_EVENT_CARDREAD_MAX_DATALEN as usize }>(&value.data)?;
         if value.nr_bits > value.data.len() * 8 {
             return Err(Error::InvalidArgument("more card bits than data"));
         }
-        data[..value.data.len()].copy_from_slice(&value.data[..]);
         Ok(libosdp_sys::osdp_event_cardread {
             reader_no: value.reader_no,
             format: value.format.into(),
@@ -206,11 +203,7 @@ impl TryFrom<KeyPress> for libosdp_sys::osdp_event_keypress {
     type Error = Error;
 
     fn try_from(value: KeyPress) -> Result<Self> {
-        let mut data = [0; libosdp_sys::OSDP_EVENT_KEYPRESS_MAX_DATALEN as usize];
-        if value.data.len() > data.len() {
-            return Err(Error::TooLong { max: data.len() });
-        }
-        data[..value.data.len()].copy_from_slice(&value.data[..]);
+        let data = copy_into::<{ libosdp_sys::OSDP_EVENT_KEYPRESS_MAX_DATALEN as usize }>(&value.data)?;
         Ok(libosdp_sys::osdp_event_keypress {
             reader_no: value.reader_no,
             length: value.data.len() as i32,
@@ -251,11 +244,7 @@ impl TryFrom<MfgReply> for libosdp_sys::osdp_event_mfgrep {
     type Error = Error;
 
     fn try_from(value: MfgReply) -> Result<Self> {
-        let mut data = [0; libosdp_sys::OSDP_EVENT_MFGREP_MAX_DATALEN as usize];
-        if value.data.len() > data.len() {
-            return Err(Error::TooLong { max: data.len() });
-        }
-        data[..value.data.len()].copy_from_slice(&value.data[..]);
+        let data = copy_into::<{ libosdp_sys::OSDP_EVENT_MFGREP_MAX_DATALEN as usize }>(&value.data)?;
         Ok(libosdp_sys::osdp_event_mfgrep {
             vendor_code: value.vendor_code.as_le(),
             length: value.data.len() as u8,
@@ -293,11 +282,8 @@ impl TryFrom<MfgStatus> for libosdp_sys::osdp_event_mfgstat {
     type Error = Error;
 
     fn try_from(value: MfgStatus) -> Result<Self> {
-        const MAX: usize = libosdp_sys::OSDP_EVENT_MFGSTAT_MAX_DATALEN as usize;
-        let mut data = [0; MAX];
-        data.get_mut(..value.data.len())
-            .ok_or(Error::TooLong { max: MAX })?
-            .copy_from_slice(&value.data);
+        let data =
+            copy_into::<{ libosdp_sys::OSDP_EVENT_MFGSTAT_MAX_DATALEN as usize }>(&value.data)?;
         Ok(libosdp_sys::osdp_event_mfgstat {
             length: value.data.len() as u8,
             data,

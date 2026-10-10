@@ -126,6 +126,16 @@ pub use trs::{
     PinLengthField, PinResult, TrsCommand, TrsReply, TrsScan,
 };
 
+/// Copy `data` into a zeroed array of `N`, or refuse it if it does not fit.
+pub(crate) fn copy_into<const N: usize>(data: &[u8]) -> Result<[u8; N], Error> {
+    let mut array = [0; N];
+    array
+        .get_mut(..data.len())
+        .ok_or(Error::TooLong { max: N })?
+        .copy_from_slice(data);
+    Ok(array)
+}
+
 /// Packs bytes into the little-endian `u32` LibOSDP expects.
 pub(crate) trait ConvertEndian {
     fn as_le(&self) -> u32;

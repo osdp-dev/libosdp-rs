@@ -6,7 +6,7 @@
 //! A PD reports the state of its inputs, outputs, readers, and its own
 //! tamper and power, one entry per entity; a CP asks for one kind at a time.
 
-use crate::Error;
+use crate::{copy_into, Error};
 use alloc::vec::Vec;
 
 type Result<T> = core::result::Result<T, Error>;
@@ -176,11 +176,7 @@ impl TryFrom<Status> for libosdp_sys::osdp_status_report {
             Status::Local { tamper, power } => alloc::vec![tamper as u8, power as u8],
             Status::Reader(readers) => readers.into_iter().map(u8::from).collect(),
         };
-        let mut report = [0; MAX_ENTRIES];
-        report
-            .get_mut(..entries.len())
-            .ok_or(Error::TooLong { max: MAX_ENTRIES })?
-            .copy_from_slice(&entries);
+        let report = copy_into::<MAX_ENTRIES>(&entries)?;
         Ok(libosdp_sys::osdp_status_report {
             type_: kind.into(),
             nr_entries: entries.len() as i32,

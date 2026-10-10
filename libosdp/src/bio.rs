@@ -6,7 +6,7 @@
 //! A CP can ask a PD with a biometric reader to scan a body part and send
 //! the scan back, or to match the scan against a template it sends.
 
-use crate::Error;
+use crate::{copy_into, Error};
 use alloc::vec::Vec;
 
 type Result<T> = core::result::Result<T, Error>;
@@ -120,16 +120,6 @@ byte_enum! {
     }
 }
 
-/// Copy `data` into a zeroed array of `N`, or refuse it if it does not fit.
-fn to_array<const N: usize>(data: &[u8]) -> Result<[u8; N]> {
-    let mut array = [0; N];
-    array
-        .get_mut(..data.len())
-        .ok_or(Error::TooLong { max: N })?
-        .copy_from_slice(data);
-    Ok(array)
-}
-
 /// Ask a PD to scan a body part and send the scan back as an
 /// [`Event::BioRead`](crate::Event::BioRead).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -214,7 +204,7 @@ impl TryFrom<BioMatchCommand> for libosdp_sys::osdp_cmd_biomatch {
             format: value.format.into(),
             quality: value.threshold,
             length: value.template.len() as u16,
-            data: to_array::<MATCH_TEMPLATE_MAX>(&value.template)?,
+            data: copy_into::<MATCH_TEMPLATE_MAX>(&value.template)?,
         })
     }
 }
@@ -265,7 +255,7 @@ impl TryFrom<BioReadReply> for libosdp_sys::osdp_event_bioreadr {
             type_: value.kind.into(),
             quality: value.quality,
             length: value.template.len() as u16,
-            data: to_array::<READ_TEMPLATE_MAX>(&value.template)?,
+            data: copy_into::<READ_TEMPLATE_MAX>(&value.template)?,
         })
     }
 }

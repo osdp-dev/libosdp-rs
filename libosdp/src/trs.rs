@@ -8,7 +8,7 @@
 //! the session. LibOSDP builds it only with the `trs` feature.
 
 use crate::commands::{from_count, to_count, SECOND};
-use crate::Error;
+use crate::{copy_into, Error};
 use alloc::vec::Vec;
 use core::time::Duration;
 
@@ -20,15 +20,10 @@ const PROTOCOL_DATA_MAX: usize = libosdp_sys::OSDP_TRS_PROTOCOL_DATA_MAX_LEN as 
 const MILLISECOND: Duration = Duration::from_millis(1);
 
 fn to_apdu(data: &[u8]) -> Result<libosdp_sys::osdp_trs_apdu> {
-    let mut apdu = libosdp_sys::osdp_trs_apdu {
+    Ok(libosdp_sys::osdp_trs_apdu {
         length: data.len() as u16,
-        data: [0; APDU_MAX],
-    };
-    apdu.data
-        .get_mut(..data.len())
-        .ok_or(Error::TooLong { max: APDU_MAX })?
-        .copy_from_slice(data);
-    Ok(apdu)
+        data: copy_into::<APDU_MAX>(data)?,
+    })
 }
 
 fn from_apdu(apdu: &libosdp_sys::osdp_trs_apdu) -> Result<Vec<u8>> {
@@ -378,12 +373,7 @@ pub enum TrsReply {
 }
 
 fn bytes_to<const N: usize>(data: &[u8]) -> Result<(u8, [u8; N])> {
-    let mut array = [0; N];
-    array
-        .get_mut(..data.len())
-        .ok_or(Error::TooLong { max: N })?
-        .copy_from_slice(data);
-    Ok((data.len() as u8, array))
+    Ok((data.len() as u8, copy_into(data)?))
 }
 
 impl TryFrom<libosdp_sys::osdp_trs_reply> for TrsReply {

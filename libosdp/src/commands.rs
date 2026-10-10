@@ -8,7 +8,8 @@
 //! such commands though [`Command`].
 
 use crate::{
-    BioMatchCommand, BioReadCommand, Challenge, Error, MpKind, PivRequest, StatusKind, TrsCommand,
+    copy_into, BioMatchCommand, BioReadCommand, Challenge, Error, MpKind, PivRequest, StatusKind,
+    TrsCommand,
 };
 use alloc::vec::Vec;
 use core::time::Duration;
@@ -509,11 +510,7 @@ impl TryFrom<TextCommand> for libosdp_sys::osdp_cmd_text {
                 to_count(shown_for, SECOND, "text display time")?,
             ),
         };
-        let mut data = [0; libosdp_sys::OSDP_CMD_TEXT_MAX_LEN as usize];
-        if value.data.len() > data.len() {
-            return Err(Error::TooLong { max: data.len() });
-        }
-        data[..value.data.len()].copy_from_slice(&value.data[..]);
+        let data = copy_into::<{ libosdp_sys::OSDP_CMD_TEXT_MAX_LEN as usize }>(&value.data)?;
         Ok(libosdp_sys::osdp_cmd_text {
             reader: value.reader,
             control_code,
@@ -719,11 +716,7 @@ impl TryFrom<KeySetCommand> for libosdp_sys::osdp_cmd_keyset {
     type Error = Error;
 
     fn try_from(value: KeySetCommand) -> Result<Self> {
-        let mut data = [0; libosdp_sys::OSDP_CMD_KEYSET_KEY_MAX_LEN as usize];
-        if value.data.len() > data.len() {
-            return Err(Error::TooLong { max: data.len() });
-        }
-        data[..value.data.len()].copy_from_slice(&value.data[..]);
+        let data = copy_into::<{ libosdp_sys::OSDP_CMD_KEYSET_KEY_MAX_LEN as usize }>(&value.data)?;
         Ok(libosdp_sys::osdp_cmd_keyset {
             type_: value.key_type,
             length: value.data.len() as u8,
@@ -763,11 +756,7 @@ impl TryFrom<MfgCommand> for libosdp_sys::osdp_cmd_mfg {
     type Error = Error;
 
     fn try_from(value: MfgCommand) -> Result<Self> {
-        let mut data = [0; libosdp_sys::OSDP_CMD_MFG_MAX_DATALEN as usize];
-        if value.data.len() > data.len() {
-            return Err(Error::TooLong { max: data.len() });
-        }
-        data[..value.data.len()].copy_from_slice(&value.data[..]);
+        let data = copy_into::<{ libosdp_sys::OSDP_CMD_MFG_MAX_DATALEN as usize }>(&value.data)?;
         Ok(libosdp_sys::osdp_cmd_mfg {
             vendor_code: value.vendor_code.as_le(),
             length: value.data.len() as u8,

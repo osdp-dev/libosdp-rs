@@ -7,7 +7,7 @@
 //! from it, or have it answer a cryptographic challenge. These travel as
 //! multi-part messages, and a PD runs one at a time.
 
-use crate::Error;
+use crate::{copy_into, Error};
 use alloc::vec::Vec;
 
 type Result<T> = core::result::Result<T, Error>;
@@ -19,12 +19,7 @@ fn to_payload(data: &[u8], what: &'static str) -> Result<(u16, [u8; MAX_LEN])> {
     if data.is_empty() {
         return Err(Error::InvalidArgument(what));
     }
-    let mut payload = [0; MAX_LEN];
-    payload
-        .get_mut(..data.len())
-        .ok_or(Error::TooLong { max: MAX_LEN })?
-        .copy_from_slice(data);
-    Ok((data.len() as u16, payload))
+    Ok((data.len() as u16, copy_into(data)?))
 }
 
 /// Ask a PD's smart card for a PIV data object, or part of one
