@@ -18,9 +18,9 @@ use crate::ffi::{
     log::cp_log_handler,
     submit::{cp_command_complete, RawSubmission},
 };
-use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 use core::num::NonZeroUsize;
-use core::cell::{Cell, RefCell};
+use core::cell::Cell;
 
 type Result<T> = core::result::Result<T, Error>;
 
@@ -98,7 +98,8 @@ impl ControlPanelBuilder {
     }
 
     /// Add a PD on this bus; the returned index addresses it on the built
-    /// [`ControlPanel`].
+    /// [`ControlPanel`]. The PD's [`file_ops`](PdInfoBuilder::file_ops), if
+    /// any, serve the files sent to it.
     pub fn add_pd(&mut self, pd_info: PdInfoBuilder) -> Result<PdIndex> {
         if self.pd_info.len() == MAX_PDS_PER_BUS {
             return Err(Error::InvalidArgument("more than 126 PDs on one bus"));
@@ -109,8 +110,18 @@ impl ControlPanelBuilder {
 
     /// Build the [`ControlPanel`] instance.
     pub fn build(self) -> Result<ControlPanel> {
-        let info: Vec<crate::PdInfoHandle> =
-            self.pd_info.into_iter().map(|pd| pd.build().into()).collect();
+        let mut file_ops = Vec::new();
+        let info: Vec<crate::PdInfoHandle> = self
+            .pd_info
+            .into_iter()
+            .enumerate()
+            .map(|(offset, mut pd)| {
+                if let Some(ops) = pd.take_file_ops() {
+                    file_ops.push((PdIndex::new(offset as u8), ops));
+                }
+                pd.build().into()
+            })
+            .collect();
         let channel = OwnedChannel::new(self.channel);
         let raw = channel.as_raw();
         unsafe { libosdp_sys::osdp_set_log_callback(Some(cp_log_handler)) };
@@ -120,6 +131,13 @@ impl ControlPanelBuilder {
         if ctx.is_null() {
             return Err(Error::Setup);
         }
+        let mut cp = ControlPanel {
+            ctx,
+            busy: Cell::new(false),
+            channel,
+            events: Shared::new(CpEventQueue::new(self.event_queue_capacity)),
+            file_ops: Vec::new(),
+        };
         unsafe {
             libosdp_sys::osdp_cp_set_command_completion_callback(
                 ctx,
@@ -127,17 +145,17 @@ impl ControlPanelBuilder {
                 core::ptr::null_mut(),
             )
         };
-        let events = Shared::new(CpEventQueue::new(self.event_queue_capacity));
         unsafe {
-            libosdp_sys::osdp_cp_set_event_callback(ctx, Some(cp_event_trampoline), events.data())
+            libosdp_sys::osdp_cp_set_event_callback(
+                ctx,
+                Some(cp_event_trampoline),
+                cp.events.data(),
+            )
         };
-        Ok(ControlPanel {
-            ctx,
-            busy: Cell::new(false),
-            channel,
-            events,
-            file_ops: RefCell::new(BTreeMap::new()),
-        })
+        for (pd, ops) in file_ops {
+            cp.attach_file_ops(pd, ops)?;
+        }
+        Ok(cp)
     }
 }
 
@@ -156,7 +174,7 @@ pub struct ControlPanel {
     #[allow(dead_code)]
     channel: OwnedChannel,
     events: Shared<CpEventQueue>,
-    file_ops: RefCell<BTreeMap<PdIndex, OwnedFileOps>>,
+    file_ops: Vec<OwnedFileOps>,
 }
 
 impl core::fmt::Debug for ControlPanel {
@@ -380,26 +398,14 @@ impl ControlPanel {
         (rc == 0).then_some(progress)
     }
 
-    /// Register a file operations handler for `pd`. See [`crate::FileOps`]
-    /// trait documentation for more details.
-    ///
-    /// Registering aborts a transfer in progress. It is refused with
-    /// [`Error::Rejected`] from inside one of this context's callbacks,
-    /// including application code that [`submit`](Self::submit)
-    /// runs, such as [`FileOps::open`] when starting a file transfer.
-    pub fn register_file_ops(&self, pd: PdIndex, fops: Box<dyn FileOps>) -> Result<()> {
-        let Some(_busy) = Busy::enter(&self.busy) else {
-            return Err(Error::Rejected);
-        };
-        let fops = OwnedFileOps::new(fops, FileRole::Sender);
-        let raw = fops.as_raw();
-        let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, pd.as_c(), &raw) };
+    fn attach_file_ops(&mut self, pd: PdIndex, ops: Box<dyn FileOps>) -> Result<()> {
+        let ops = OwnedFileOps::new(ops, FileRole::Sender);
+        let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, pd.as_c(), &ops.as_raw()) };
         if rc < 0 {
-            Err(Error::Rejected)
-        } else {
-            self.file_ops.borrow_mut().insert(pd, fops);
-            Ok(())
+            return Err(Error::Setup);
         }
+        self.file_ops.push(ops);
+        Ok(())
     }
 }
 

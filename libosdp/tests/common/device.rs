@@ -9,7 +9,7 @@ use std::{
 };
 
 use libosdp::{
-    CapFunction, Capability, ControlPanel, ControlPanelBuilder, Command, CpEvent, Event,
+    CapFunction, Capability, ControlPanel, ControlPanelBuilder, Command, CpEvent, Event, FileOps,
     PdIndex, PdInfoBuilder, PeripheralDevice, Responder,
 };
 type Result<T> = core::result::Result<T, libosdp::Error>;
@@ -22,18 +22,24 @@ pub struct CpDevice {
 }
 
 impl CpDevice {
-    pub fn new(bus: Box<dyn libosdp::Channel>) -> Result<Self> {
+    pub fn new(
+        bus: Box<dyn libosdp::Channel>,
+        file_ops: Option<Box<dyn FileOps>>,
+    ) -> Result<Self> {
         #[rustfmt::skip]
         let pd_0_key = [
             0x94, 0x4b, 0x8e, 0xdd, 0xcb, 0xaa, 0x2b, 0x5f,
             0xe2, 0xb0, 0x14, 0x8d, 0x1b, 0x2f, 0x95, 0xc9
         ];
 
-        let pd_0 = PdInfoBuilder::new()
+        let mut pd_0 = PdInfoBuilder::new()
             .name("PD 101")?
             .address(101)?
             .baud_rate(115200)?
             .secure_channel_key(pd_0_key);
+        if let Some(file_ops) = file_ops {
+            pd_0 = pd_0.file_ops(file_ops);
+        }
         let mut builder = ControlPanelBuilder::new(bus);
         let pd = builder.add_pd(pd_0)?;
         let cp = builder.build()?;
@@ -77,14 +83,17 @@ pub struct PdDevice {
 }
 
 impl PdDevice {
-    pub fn new(bus: Box<dyn libosdp::Channel>) -> Result<Self> {
+    pub fn new(
+        bus: Box<dyn libosdp::Channel>,
+        file_ops: Option<Box<dyn FileOps>>,
+    ) -> Result<Self> {
         #[rustfmt::skip]
         let key = [
             0x94, 0x4b, 0x8e, 0xdd, 0xcb, 0xaa, 0x2b, 0x5f,
             0xe2, 0xb0, 0x14, 0x8d, 0x1b, 0x2f, 0x95, 0xc9
         ];
 
-        let pd_info = PdInfoBuilder::new()
+        let mut pd_info = PdInfoBuilder::new()
             .name("PD 101")?
             .address(101)?
             .baud_rate(115200)?
@@ -92,6 +101,9 @@ impl PdDevice {
             .capability(Capability::new(CapFunction::AudibleOutput, 1, 1))
             .capability(Capability::new(CapFunction::LedControl, 1, 1))
             .secure_channel_key(key);
+        if let Some(file_ops) = file_ops {
+            pd_info = pd_info.file_ops(file_ops);
+        }
         let pd = PeripheralDevice::new(pd_info, bus)?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Command>();
         let dev = Arc::new(Mutex::new(pd));

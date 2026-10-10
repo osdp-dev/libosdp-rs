@@ -115,24 +115,19 @@ where
 #[test]
 fn test_file_transfer() -> Result<()> {
     common::setup();
-    let (cp_bus, pd_bus) = MemoryChannel::new();
-    let pd = PdDevice::new(Box::new(pd_bus))?;
-    let cp = CpDevice::new(Box::new(cp_bus))?;
-
     create_random_file("/tmp/ftx_test.in", 50 * 1024);
     let _ = std::fs::remove_file("/tmp/ftx_test.out");
 
+    let mut sender = OsdpFileManager::new();
+    sender.register_file(1, "/tmp/ftx_test.in");
+    let mut receiver = OsdpFileManager::new();
+    receiver.register_file(1, "/tmp/ftx_test.out");
+
+    let (cp_bus, pd_bus) = MemoryChannel::new();
+    let pd = PdDevice::new(Box::new(pd_bus), Some(Box::new(receiver)))?;
+    let cp = CpDevice::new(Box::new(cp_bus), Some(Box::new(sender)))?;
+
     thread::sleep(Duration::from_secs(2));
-
-    let mut fm = OsdpFileManager::new();
-    fm.register_file(1, "/tmp/ftx_test.in");
-
-    cp.get_device().register_file_ops(cp.pd, Box::new(fm))?;
-
-    let mut fm = OsdpFileManager::new();
-    fm.register_file(1, "/tmp/ftx_test.out");
-
-    pd.get_device().register_file_ops(Box::new(fm))?;
 
     let command = Command::FileTx(FileTxCommand { id: 1 });
     cp.get_device().submit(cp.pd, command.clone())?;

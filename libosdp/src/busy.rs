@@ -8,10 +8,10 @@
 //! own context again, through a thread local for instance. LibOSDP must not
 //! be refreshed from inside its own refresh, and an allocation must not be
 //! freed while one of its methods is running, so a context marks itself busy
-//! around every call that can run application code: `refresh`,
-//! `register_file_ops`, and `submit`, which runs `FileOps::open`
-//! inline when it starts a file transfer. When the context is already busy,
-//! `refresh` does nothing and the other two return `Error::Rejected`.
+//! around every call that can run application code: `refresh`, and a CP's
+//! `submit`, which runs `FileOps::open` inline when it starts a file
+//! transfer. When the context is already busy, `refresh` does nothing and
+//! `submit` returns `Error::Rejected`.
 
 use core::cell::Cell;
 

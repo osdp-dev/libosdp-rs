@@ -13,8 +13,8 @@
 //! to the CP.
 
 use crate::{
-    busy::Busy, queue::DrainQueue, Capability, Channel, Command, Error, Event, FileOps,
-    FileProgress, Metrics, Nak, Notification, PdInfoBuilder, Submission,
+    busy::Busy, queue::DrainQueue, Channel, Command, Error, Event, FileOps, FileProgress,
+    Metrics, Nak, Notification, PdInfoBuilder, Submission,
 };
 use crate::ffi::{
     callback::{pd_command_trampoline, CallbackSlot, PdCommandSlot, Shared},
@@ -23,10 +23,9 @@ use crate::ffi::{
     log::pd_log_handler,
     submit::{pd_event_complete, RawSubmission},
 };
-use crate::pdinfo::terminated_capabilities;
 use alloc::boxed::Box;
 use core::{
-    cell::{Cell, RefCell},
+    cell::Cell,
     marker::PhantomData,
     num::NonZeroUsize,
 };
@@ -146,7 +145,7 @@ pub struct PeripheralDevice {
     #[allow(dead_code)]
     channel: OwnedChannel,
     command_handler: Shared<PdCommandSlot>,
-    file_ops: RefCell<Option<OwnedFileOps>>,
+    file_ops: Option<OwnedFileOps>,
 }
 
 impl core::fmt::Debug for PeripheralDevice {
@@ -158,9 +157,13 @@ impl core::fmt::Debug for PeripheralDevice {
 unsafe impl Send for PeripheralDevice {}
 
 impl PeripheralDevice {
-    /// Create a new Peripheral panel object for the PD described by the corresponding PdInfo struct.
-    pub fn new(info: PdInfoBuilder, channel: Box<dyn Channel>) -> Result<Self> {
+    /// Create a new Peripheral panel object for the PD described by the
+    /// corresponding PdInfo struct; its
+    /// [`file_ops`](PdInfoBuilder::file_ops), if any, receive the files the
+    /// CP sends.
+    pub fn new(mut info: PdInfoBuilder, channel: Box<dyn Channel>) -> Result<Self> {
         unsafe { libosdp_sys::osdp_set_log_callback(Some(pd_log_handler)) };
+        let file_ops = info.take_file_ops();
         let channel = OwnedChannel::new(channel);
         let mut raw = channel.as_raw();
         let info: crate::PdInfoHandle = info.build().into();
@@ -168,6 +171,17 @@ impl PeripheralDevice {
         if ctx.is_null() {
             return Err(Error::Setup);
         }
+        let mut pd = Self {
+            ctx,
+            busy: Cell::new(false),
+            channel,
+            command_handler: Shared::new(PdCommandSlot {
+                ctx,
+                handler: CallbackSlot::new(),
+                notifications: DrainQueue::new(NOTIFICATION_QUEUE_CAPACITY),
+            }),
+            file_ops: None,
+        };
         unsafe {
             libosdp_sys::osdp_pd_set_event_completion_callback(
                 ctx,
@@ -175,25 +189,17 @@ impl PeripheralDevice {
                 core::ptr::null_mut(),
             )
         };
-        let command_handler = Shared::new(PdCommandSlot {
-            ctx,
-            handler: CallbackSlot::new(),
-            notifications: DrainQueue::new(NOTIFICATION_QUEUE_CAPACITY),
-        });
         unsafe {
             libosdp_sys::osdp_pd_set_command_callback(
                 ctx,
                 Some(pd_command_trampoline),
-                command_handler.data(),
+                pd.command_handler.data(),
             )
         };
-        Ok(Self {
-            ctx,
-            busy: Cell::new(false),
-            channel,
-            command_handler,
-            file_ops: RefCell::new(None),
-        })
+        if let Some(ops) = file_ops {
+            pd.attach_file_ops(ops)?;
+        }
+        Ok(pd)
     }
 
     /// This method is used to periodically refresh the underlying LibOSDP state
@@ -207,12 +213,6 @@ impl PeripheralDevice {
             return;
         };
         unsafe { libosdp_sys::osdp_pd_refresh(self.ctx) }
-    }
-
-    /// Set a vector of [`Capability`] for this PD.
-    pub fn set_capabilities(&self, cap: &[Capability]) {
-        let cap = terminated_capabilities(cap.iter().map(|&c| c.into()));
-        unsafe { libosdp_sys::osdp_pd_set_capabilities(self.ctx, cap.as_ptr()) }
     }
 
     /// Drop the events queued for the CP that have not been sent yet; each
@@ -297,24 +297,14 @@ impl PeripheralDevice {
         (rc == 0).then_some(progress)
     }
 
-    /// Register a file operations handler for PD. See [`crate::FileOps`]
-    /// trait documentation for more details.
-    ///
-    /// Registering aborts a transfer in progress. It is refused with
-    /// [`Error::Rejected`] from inside one of this context's callbacks.
-    pub fn register_file_ops(&self, fops: Box<dyn FileOps>) -> Result<()> {
-        let Some(_busy) = Busy::enter(&self.busy) else {
-            return Err(Error::Rejected);
-        };
-        let fops = OwnedFileOps::new(fops, FileRole::Receiver);
-        let raw = fops.as_raw();
-        let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, 0, &raw) };
+    fn attach_file_ops(&mut self, ops: Box<dyn FileOps>) -> Result<()> {
+        let ops = OwnedFileOps::new(ops, FileRole::Receiver);
+        let rc = unsafe { libosdp_sys::osdp_file_register_ops(self.ctx, 0, &ops.as_raw()) };
         if rc < 0 {
-            Err(Error::Rejected)
-        } else {
-            *self.file_ops.borrow_mut() = Some(fops);
-            Ok(())
+            return Err(Error::Setup);
         }
+        self.file_ops = Some(ops);
+        Ok(())
     }
 }
 

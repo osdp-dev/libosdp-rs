@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{Capability, Error, Flag, PdId};
+use crate::{Capability, Error, FileOps, Flag, PdId};
 use alloc::{boxed::Box, ffi::CString, string::String, vec::Vec};
 use core::ops::Deref;
 
@@ -145,6 +145,16 @@ pub struct PdInfoBuilder {
     id: PdId,
     cap: Vec<libosdp_sys::osdp_pd_cap>,
     scbk: Option<[u8; 16]>,
+    file_ops: PendingFileOps,
+}
+
+#[derive(Default)]
+struct PendingFileOps(Option<Box<dyn FileOps>>);
+
+impl core::fmt::Debug for PendingFileOps {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(if self.0.is_some() { "Some(..)" } else { "None" })
+    }
 }
 
 impl PdInfoBuilder {
@@ -224,7 +234,27 @@ impl PdInfoBuilder {
         self
     }
 
+    /// Serve this PD's file transfers with `ops`: on a
+    /// [`ControlPanel`](crate::ControlPanel), the files it sends to the PD,
+    /// and on a [`PeripheralDevice`](crate::PeripheralDevice), the files it
+    /// receives from the CP. See [`FileOps`].
+    ///
+    /// They are fixed once the context is built; to serve several files,
+    /// pick the file in [`FileOps::open`] by the ID it is given.
+    pub fn file_ops(mut self, ops: Box<dyn FileOps>) -> PdInfoBuilder {
+        self.file_ops = PendingFileOps(Some(ops));
+        self
+    }
+
+    pub(crate) fn take_file_ops(&mut self) -> Option<Box<dyn FileOps>> {
+        self.file_ops.0.take()
+    }
+
     /// Finalize the PdInfo from the current builder
+    ///
+    /// [`PdInfo`] does not carry file ops; give them through this builder
+    /// to [`ControlPanelBuilder::add_pd`](crate::ControlPanelBuilder::add_pd)
+    /// or [`PeripheralDevice::new`](crate::PeripheralDevice::new) instead.
     pub fn build(self) -> PdInfo {
         let name = self.name.unwrap_or_else(|| {
             let mut buffer = itoa::Buffer::new();

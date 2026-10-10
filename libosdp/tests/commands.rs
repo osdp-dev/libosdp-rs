@@ -49,8 +49,8 @@ fn test_thread_bus_channel() -> Result<()> {
 fn test_commands() -> Result<()> {
     common::setup();
     let (cp_bus, pd_bus) = MemoryChannel::new();
-    let pd = PdDevice::new(Box::new(pd_bus))?;
-    let cp = CpDevice::new(Box::new(cp_bus))?;
+    let pd = PdDevice::new(Box::new(pd_bus), None)?;
+    let cp = CpDevice::new(Box::new(cp_bus), None)?;
 
     thread::sleep(time::Duration::from_secs(2));
     loop {

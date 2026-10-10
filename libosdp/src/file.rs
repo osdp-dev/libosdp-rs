@@ -52,13 +52,12 @@ pub enum Finalize {
 }
 
 /// File operations handler trait. Any type that implements this trait can be
-/// registered with [`crate::ControlPanel::register_file_ops`] or
-/// [`crate::PeripheralDevice::register_file_ops`].
+/// given to a PD with [`PdInfoBuilder::file_ops`](crate::PdInfoBuilder::file_ops).
 ///
 /// LibOSDP calls these from inside the context's `refresh()`, from
 /// [`ControlPanel::submit`](crate::ControlPanel::submit) when it starts a
-/// transfer, and `close` from `register_file_ops` when it replaces ops with a
-/// file open, and when the context is dropped, so they must return promptly.
+/// transfer, and `close` when the context is dropped with a file open, so
+/// they must return promptly.
 ///
 /// Implementors are moved into a `Send` context, so they must be `Send`:
 ///

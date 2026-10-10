@@ -99,8 +99,9 @@ but not landed).
   calls would free, and propose the C fix.
 - **Resolution.** Open. libosdp-rs marks a context busy around every
   call that can run application code: a nested `refresh` does nothing,
-  and a nested `submit` or `register_file_ops` returns
-  `Error::Rejected`. Proposed upstream: document, per callback, the
+  and a nested `submit` returns `Error::Rejected`. File ops are given
+  at setup, with `PdInfoBuilder::file_ops`, so a callback cannot
+  register any. Proposed upstream: document, per callback, the
   calls allowed from it, and refuse a nested refresh and file-ops
   registration the way teardown is refused. The refresh half of the
   Rust guard becomes redundant once that lands.

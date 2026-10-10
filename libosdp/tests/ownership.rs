@@ -129,9 +129,8 @@ fn channel_is_closed_once_before_it_is_freed() -> Result<()> {
 fn cp_drop_frees_channel_and_file_ops() -> Result<()> {
     let drops = DropCounter::default();
     let mut builder = ControlPanelBuilder::new(Box::new(IdleChannel(drops.guard())));
-    let pd = builder.add_pd(pd_info()?)?;
+    builder.add_pd(pd_info()?.file_ops(Box::new(NoFiles(drops.guard()))))?;
     let cp = builder.build()?;
-    cp.register_file_ops(pd, Box::new(NoFiles(drops.guard())))?;
     assert_eq!(drops.count(), 0);
     drop(cp);
     assert_eq!(drops.count(), 2);
@@ -139,34 +138,17 @@ fn cp_drop_frees_channel_and_file_ops() -> Result<()> {
 }
 
 #[test]
-fn replacing_file_ops_frees_the_old_ones() -> Result<()> {
-    let drops = DropCounter::default();
-    let mut builder = ControlPanelBuilder::new(Box::new(IdleChannel(drops.guard())));
-    let target = builder.add_pd(pd_info()?)?;
-    let cp = builder.build()?;
-    cp.register_file_ops(target, Box::new(NoFiles(drops.guard())))?;
-    cp.register_file_ops(target, Box::new(NoFiles(drops.guard())))?;
-    assert_eq!(drops.count(), 1);
-    let pd = PeripheralDevice::new(pd_info()?, Box::new(IdleChannel(drops.guard())))?;
-    pd.register_file_ops(Box::new(NoFiles(drops.guard())))?;
-    pd.register_file_ops(Box::new(NoFiles(drops.guard())))?;
-    assert_eq!(drops.count(), 2);
-    drop(cp);
-    drop(pd);
-    assert_eq!(drops.count(), 6);
-    Ok(())
-}
-
-#[test]
 fn pd_drop_frees_channel_handler_and_file_ops() -> Result<()> {
     let drops = DropCounter::default();
-    let pd = PeripheralDevice::new(pd_info()?, Box::new(IdleChannel(drops.guard())))?;
+    let pd = PeripheralDevice::new(
+        pd_info()?.file_ops(Box::new(NoFiles(drops.guard()))),
+        Box::new(IdleChannel(drops.guard())),
+    )?;
     let guard = drops.guard();
     pd.set_command_handler(move |_, _: &mut Responder<'_>| {
         let _ = &guard;
         Ok(())
     });
-    pd.register_file_ops(Box::new(NoFiles(drops.guard())))?;
     assert_eq!(drops.count(), 0);
     drop(pd);
     assert_eq!(drops.count(), 3);
@@ -210,9 +192,17 @@ fn secure_pair_with_event_queue(
 }
 
 fn notifying_pair() -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
+    notifying_pair_from(pd_info()?, pd_info()?)
+}
+
+/// `cp_side` describes the PD to the CP, and `pd_side` to the PD itself.
+fn notifying_pair_from(
+    cp_side: PdInfoBuilder,
+    pd_side: PdInfoBuilder,
+) -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
     let (cp_bus, pd_bus) = MemoryChannel::new();
     let pd = PeripheralDevice::new(
-        pd_info()?
+        pd_side
             .flag(Flag::EnableNotification)
             .id(&PdId::from_number(7))
             .capability(Capability::new(CapFunction::CommunicationSecurity, 1, 1))
@@ -221,7 +211,7 @@ fn notifying_pair() -> Result<(ControlPanel, PdIndex, PeripheralDevice)> {
     )?;
     let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
     let target = builder.add_pd(
-        pd_info()?
+        cp_side
             .flag(Flag::EnableNotification)
             .secure_channel_key(KEY),
     )?;
@@ -286,28 +276,6 @@ fn pd_capabilities_survive_setup() -> Result<()> {
     );
     assert_eq!(cp.capability(target, CapFunction::Biometrics), None);
     assert_eq!(cp.pd_id(target), Some(PdId::default()));
-    Ok(())
-}
-
-#[test]
-fn capabilities_set_after_setup_reach_the_cp() -> Result<()> {
-    let (cp_bus, pd_bus) = MemoryChannel::new();
-    let pd = PeripheralDevice::new(pd_info()?, Box::new(pd_bus))?;
-    pd.set_capabilities(&[Capability::new(CapFunction::LedControl, 1, 4)]);
-    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
-    let target = builder.add_pd(pd_info()?)?;
-    let cp = builder.build()?;
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while !cp.is_online(target) {
-        assert!(Instant::now() < deadline, "PD never came online");
-        cp.refresh();
-        pd.refresh();
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    assert_eq!(
-        cp.capability(target, CapFunction::LedControl),
-        Some(Capability::new(CapFunction::LedControl, 1, 4))
-    );
     Ok(())
 }
 
@@ -393,29 +361,21 @@ fn pd_handler_replaced_from_inside_itself_is_freed_after_it_returns() -> Result<
 thread_local! {
     static NESTED_SEND: std::cell::RefCell<Option<Result<()>>> =
         const { std::cell::RefCell::new(None) };
-    static NESTED_REGISTRATION: std::cell::RefCell<Option<Result<()>>> =
-        const { std::cell::RefCell::new(None) };
+    static SEND_TARGET: Cell<Option<PdIndex>> = const { Cell::new(None) };
 }
 
-struct RegistersFileOpsFromOpen {
-    _guard: DropGuard,
-    ballast: Vec<u8>,
-    target: PdIndex,
-}
+struct SubmitsFromOpen;
 
-impl FileOps for RegistersFileOpsFromOpen {
+impl FileOps for SubmitsFromOpen {
     fn open(&mut self, _: i32, _: OpenMode) -> core::result::Result<u32, FileError> {
-        let replacement = Box::new(NoFiles(DropCounter::default().guard()));
-        let result = CP.with(|cp| cp.get().unwrap().register_file_ops(self.target, replacement));
-        NESTED_REGISTRATION.with(|slot| *slot.borrow_mut() = Some(result));
+        let target = SEND_TARGET.get().unwrap();
         let nested_send = CP.with(|cp| {
             cp.get()
                 .unwrap()
-                .submit(self.target, Command::FileTx(FileTxCommand { id: 1 }))
+                .submit(target, Command::FileTx(FileTxCommand { id: 1 }))
                 .map(|_| ())
         });
         NESTED_SEND.with(|slot| *slot.borrow_mut() = Some(nested_send));
-        self.ballast.fill(1);
         Err(FileError::NotFound)
     }
     fn read(&mut self, _: &mut [u8], _: u32) -> core::result::Result<usize, FileError> {
@@ -430,17 +390,11 @@ impl FileOps for RegistersFileOpsFromOpen {
 }
 
 #[test]
-fn register_file_ops_from_open_during_submit_is_rejected() -> Result<()> {
-    let (cp, target, _pd) = secure_pair()?;
-    let drops = DropCounter::default();
-    cp.register_file_ops(
-        target,
-        Box::new(RegistersFileOpsFromOpen {
-            _guard: drops.guard(),
-            ballast: vec![0; 4096],
-            target,
-        }),
-    )?;
+fn submit_from_open_during_submit_is_rejected() -> Result<()> {
+    let (cp, target, pd) =
+        notifying_pair_from(pd_info()?.file_ops(Box::new(SubmitsFromOpen)), pd_info()?)?;
+    refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
+    SEND_TARGET.set(Some(target));
     CP.with(|slot| slot.set(cp).unwrap());
     let sent = CP.with(|cp| {
         cp.get()
@@ -450,14 +404,9 @@ fn register_file_ops_from_open_during_submit_is_rejected() -> Result<()> {
     });
     assert!(sent.is_err());
     assert_eq!(
-        NESTED_REGISTRATION.with(|slot| slot.borrow_mut().take()),
-        Some(Err(Error::Rejected))
-    );
-    assert_eq!(
         NESTED_SEND.with(|slot| slot.borrow_mut().take()),
         Some(Err(Error::Rejected))
     );
-    assert_eq!(drops.count(), 0);
     Ok(())
 }
 
@@ -803,10 +752,11 @@ impl FileOps for MemFile {
 
 #[test]
 fn cancelled_file_transfer_fails_and_reports_aborted() -> Result<()> {
-    let (cp, target, pd) = notifying_pair()?;
+    let (cp, target, pd) = notifying_pair_from(
+        pd_info()?.file_ops(Box::new(MemFile(vec![0x5A; 16 * 1024]))),
+        pd_info()?.file_ops(Box::new(MemFile(Vec::new()))),
+    )?;
     refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
-    cp.register_file_ops(target, Box::new(MemFile(vec![0x5A; 16 * 1024])))?;
-    pd.register_file_ops(Box::new(MemFile(Vec::new())))?;
     pd.set_command_handler(|_, _: &mut Responder<'_>| Ok(()));
     let transfer = cp.submit(target, Command::FileTx(FileTxCommand { id: 1 }))?;
     assert_eq!(transfer.cancel(), Ok(()));
@@ -870,13 +820,14 @@ impl FileOps for VerifyingSink {
 
 #[test]
 fn pd_finalizes_a_received_file_with_its_own_outcome() -> Result<()> {
-    let (cp, target, pd) = notifying_pair()?;
-    refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
     let checks_left = Arc::new(AtomicUsize::new(2));
-    cp.register_file_ops(target, Box::new(MemFile(vec![0x5A; 512])))?;
-    pd.register_file_ops(Box::new(VerifyingSink {
-        checks_left: checks_left.clone(),
-    }))?;
+    let (cp, target, pd) = notifying_pair_from(
+        pd_info()?.file_ops(Box::new(MemFile(vec![0x5A; 512]))),
+        pd_info()?.file_ops(Box::new(VerifyingSink {
+            checks_left: checks_left.clone(),
+        })),
+    )?;
+    refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
     pd.set_command_handler(|_, _: &mut Responder<'_>| Ok(()));
     let transfer = cp.submit(target, Command::FileTx(FileTxCommand { id: 1 }))?;
     assert_eq!(

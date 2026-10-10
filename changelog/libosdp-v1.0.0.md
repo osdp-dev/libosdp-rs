@@ -22,8 +22,8 @@ Release subject ## TODO
 - api: Take &self on every ControlPanel and PeripheralDevice method. A
   context stays Send but not Sync. refresh() called from inside one of
   the context's own callbacks, including FileOps::open run by
-  submit(), does nothing, and submit() and register_file_ops() from
-  there return Error::Rejected
+  submit(), does nothing, and submit() from there returns
+  Error::Rejected
 - api: Replace send_command and notify_event with submit, which
   returns a Submission whose status() reports how the command or
   event ended: Ok, or a CompletionError (Failed, Flushed, Aborted).
@@ -63,8 +63,8 @@ Release subject ## TODO
   serde_arrays
 - pdcap: Replace PdCapability and PdCapEntity with Capability {
   function, compliance, items }, whose function is a CapFunction.
-  PdInfoBuilder and PeripheralDevice::set_capabilities take it. The
-  string parsers for capabilities, which only osdpctl used, are gone
+  PdInfoBuilder takes it. The string parsers for capabilities, which
+  only osdpctl used, are gone
 - cp, pd: Answer queries with Option: pd_id and capability return None
   while the PD is offline, capability also for a function the PD did not
   advertise, and file_progress, which replaces file_transfer_status,
@@ -76,6 +76,12 @@ Release subject ## TODO
   file ops are always opened to OpenMode::Read and a PD's to
   OpenMode::Write { size }, so a PD receiving an empty file is no longer
   told to read it
+- api: Give a PD its FileOps with PdInfoBuilder::file_ops, which
+  ControlPanelBuilder::build and PeripheralDevice::new hand to LibOSDP,
+  in place of register_file_ops on ControlPanel and PeripheralDevice.
+  PeripheralDevice::set_capabilities is gone too: PdInfoBuilder sets
+  the capabilities. LibOSDP fixes both when a context is first
+  refreshed
 - file: Cancel a file transfer with Submission::cancel on the submission
   that started it. FileTxCommand::flags and OSDP_CMD_FILE_TX_FLAG_CANCEL
   are gone: LibOSDP 4.0 no longer honours the flag
@@ -130,8 +136,6 @@ Release subject ## TODO
   buffer (KeySetCommand, MfgCommand, CardRead, KeyPress, MfgReply) with
   Error::Malformed instead of panicking inside LibOSDP's callback, which
   aborted the process
-- pd: End the capability list that set_capabilities hands LibOSDP, which
-  read past its end looking for the terminator
 - pdid: Read a PdId's serial number in the byte order it is written in,
   so the serial number a CP reads is the one the PD was given rather
   than its bytes reversed
