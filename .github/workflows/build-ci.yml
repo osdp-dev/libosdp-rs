@@ -98,3 +98,26 @@ jobs:
         run: cargo test --package libosdp --features async
       - name: Build the async examples
         run: cargo build --package libosdp --features async --examples
+
+  valgrind:
+    name: Integration tests under valgrind
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: >-
+        valgrind --error-exitcode=1 --leak-check=full
+        --errors-for-leak-kinds=definite --track-origins=yes
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Setup rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        with:
+          toolchain: stable
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Library and single-threaded integration tests
+        run: >-
+          cargo test --package libosdp --features async
+          --lib --test ownership --test api --test async
