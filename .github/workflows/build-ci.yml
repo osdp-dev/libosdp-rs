@@ -47,6 +47,8 @@ jobs:
         run: cargo check --package libosdp --target thumbv6m-none-eabi --no-default-features
       - name: Cargo check no-std with defmt
         run: cargo check --package libosdp --target thumbv6m-none-eabi --no-default-features --features defmt
+      - name: Cargo check no-std with async
+        run: cargo check --package libosdp --target thumbv6m-none-eabi --no-default-features --features async
       - name: Cargo check TRS
         run: cargo check --package libosdp-sys --features trs
       - name: Cargo check TRS no-std
@@ -92,3 +94,7 @@ jobs:
         run: cargo test
       - name: Cargo test TRS
         run: cargo test --package libosdp --features trs
+      - name: Cargo test async
+        run: cargo test --package libosdp --features async
+      - name: Build the async examples
+        run: cargo build --package libosdp --features async --examples
