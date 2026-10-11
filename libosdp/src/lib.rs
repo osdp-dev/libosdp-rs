@@ -52,6 +52,7 @@
 //!   - answer the commands issued by the CP through a [`CommandHandler`]
 //!
 //! You can find a template implementation for CP app [here][3] and PD app [here][4].
+//! With the `async` feature, see [async_cp.rs][7] and [async_pd.rs][8].
 //!
 //! ## Cargo features
 //!
@@ -78,6 +79,8 @@
 //! [4]: https://docs.rs/crate/libosdp/latest/source/examples/pd.rs
 //! [5]: https://doc.osdp.dev/libosdp/compatibility
 //! [6]: https://doc.osdp.dev/libosdp/secure-channel
+//! [7]: https://docs.rs/crate/libosdp/latest/source/examples/async_cp.rs
+//! [8]: https://docs.rs/crate/libosdp/latest/source/examples/async_pd.rs
 
 #![warn(missing_debug_implementations)]
 #![warn(rust_2018_idioms)]

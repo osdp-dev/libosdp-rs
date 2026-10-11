@@ -31,6 +31,7 @@ rand = "0.10.1"
 ringbuf = "0.5.0"
 sha256 = "1.6.0"
 futures = { version = "0.3.31", default-features = false, features = ["std", "executor"] }
+tokio = { version = "1", features = ["rt", "time", "macros"] }
 
 [features]
 async = ["dep:futures-core"]
@@ -48,3 +49,11 @@ required-features = ["std"]
 [[example]]
 name = "pd"
 required-features = ["std"]
+
+[[example]]
+name = "async_cp"
+required-features = ["std", "async"]
+
+[[example]]
+name = "async_pd"
+required-features = ["std", "async"]
