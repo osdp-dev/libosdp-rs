@@ -20,6 +20,8 @@ use core::{
 pub(crate) struct CpEvents {
     pub(crate) queue: DrainQueue<(PdIndex, CpEvent)>,
     replies: RefCell<BTreeMap<PdIndex, Weak<Slot>>>,
+    #[cfg(feature = "async")]
+    pub(crate) stream_waker: crate::wake::WakerSlot,
 }
 
 impl CpEvents {
@@ -27,6 +29,8 @@ impl CpEvents {
         Self {
             queue: DrainQueue::new(capacity),
             replies: RefCell::new(BTreeMap::new()),
+            #[cfg(feature = "async")]
+            stream_waker: Default::default(),
         }
     }
 
@@ -65,6 +69,8 @@ pub(crate) struct PdCommandSlot {
     pub(crate) ctx: *mut libosdp_sys::osdp_t,
     pub(crate) handler: CallbackSlot<Box<dyn CommandHandler>>,
     pub(crate) notifications: DrainQueue<Notification>,
+    #[cfg(feature = "async")]
+    pub(crate) stream_waker: crate::wake::WakerSlot,
 }
 
 /// The application's current callback. LibOSDP is given a pointer to the

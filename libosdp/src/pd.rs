@@ -180,6 +180,8 @@ impl PeripheralDevice {
                 ctx,
                 handler: CallbackSlot::new(),
                 notifications: DrainQueue::new(NOTIFICATION_QUEUE_CAPACITY),
+                #[cfg(feature = "async")]
+                stream_waker: Default::default(),
             }),
             #[cfg(feature = "async")]
             wakeups: Shared::new(Default::default()),
@@ -228,8 +230,9 @@ impl PeripheralDevice {
         self.wake_waiting();
     }
 
-    /// Wake the tasks whose submissions LibOSDP completed during the call
-    /// that just returned.
+    /// Wake the tasks whose submissions LibOSDP completed, and the one
+    /// waiting on the notification stream when notifications are queued,
+    /// during the call that just returned.
     ///
     /// Called from inside one of this context's callbacks, it wakes nothing:
     /// the refresh that is running wakes them once LibOSDP returns.
@@ -240,6 +243,12 @@ impl PeripheralDevice {
                 return;
             }
             self.wakeups.get().wake_all();
+            let slot = self.command_handler.get();
+            if !slot.notifications.is_empty() {
+                if let Some(waker) = slot.stream_waker.take() {
+                    waker.wake();
+                }
+            }
         }
     }
 
@@ -273,6 +282,20 @@ impl PeripheralDevice {
     /// dropped and counted by [`PeripheralDevice::dropped_notifications`].
     pub fn next_notification(&self) -> Option<Notification> {
         self.command_handler.get().notifications.pop()
+    }
+
+    /// The notifications that [`next_notification`](Self::next_notification)
+    /// hands over, as a stream that wakes its task after a refresh queues
+    /// one. Refreshing is still up to the application, for example with
+    /// [`refresh`](Self::refresh).
+    #[cfg(feature = "async")]
+    pub fn notifications(&self) -> crate::NotificationStream<'_> {
+        crate::NotificationStream::new(self)
+    }
+
+    #[cfg(feature = "async")]
+    pub(crate) fn park_notification_waker(&self, waker: &core::task::Waker) {
+        self.command_handler.get().stream_waker.register(waker);
     }
 
     /// How many notifications were dropped because the queue was full,

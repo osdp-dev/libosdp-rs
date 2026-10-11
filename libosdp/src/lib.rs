@@ -63,9 +63,10 @@
 //!     derive `defmt::Format` for most public types.
 //!   - `serde`: derive `Serialize` and `Deserialize` for the public data
 //!     types.
-//!   - `async`: await a [`Submission`] for how it ended. Wakers run only
-//!     after the call that completed the submission returns, never inside
-//!     a LibOSDP callback.
+//!   - `async`: await a [`Submission`] for how it ended, and read CP events
+//!     and PD notifications as a `Stream`. Wakers run only after the call
+//!     that queued or completed something returns, never inside a LibOSDP
+//!     callback.
 //!   - `trs`: build LibOSDP's transparent reader support, which
 //!     [`Command::Trs`] and [`Event::Trs`] need. Without it, LibOSDP refuses
 //!     those commands with [`Error::Rejected`].
@@ -101,6 +102,8 @@ mod pdinfo;
 mod piv;
 mod queue;
 mod status;
+#[cfg(feature = "async")]
+mod stream;
 mod submit;
 mod trs;
 #[cfg(feature = "async")]
@@ -114,6 +117,8 @@ pub use file::{FileOps, FileProgress, Finalize, OpenMode};
 pub use pdcap::{CapFunction, Capability};
 pub use pdid::*;
 pub use pdinfo::*;
+#[cfg(feature = "async")]
+pub use stream::{EventStream, NotificationStream};
 
 pub use bio::{
     BioFormat, BioMatchCommand, BioMatchReply, BioReadCommand, BioReadReply, BioStatus, BioType,

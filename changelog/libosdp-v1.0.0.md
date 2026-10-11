@@ -122,6 +122,9 @@ Release subject ## TODO
   into how the command or event ended, or into the reply of a PIV or
   authenticate command. Tasks are woken after refresh(), flush() or
   submit() returns, never from inside a LibOSDP callback
+- async: Read CP events and notifications with ControlPanel::events()
+  and PD notifications with PeripheralDevice::notifications(), as
+  streams that wake their task once a refresh has queued something
 - cp: Take a PD off the bus and back with ControlPanel::disable and
   enable, and check which it is with is_enabled
 - metrics: Read a link's health counters -- packets, check errors, NAKs,

@@ -14,9 +14,10 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
+use futures::Stream;
 use libosdp::{
     Buzzer, BuzzerCommand, CapFunction, Capability, CardRead, Channel, ChannelError, Command,
-    CompletionError, ControlPanel, ControlPanelBuilder, Event, PdIndex, PdInfoBuilder,
+    CompletionError, ControlPanel, ControlPanelBuilder, CpEvent, Event, PdIndex, PdInfoBuilder,
     PeripheralDevice, Responder,
 };
 use std::{
@@ -290,5 +291,131 @@ fn dropping_a_pending_future_leaves_the_submission_running() -> Result<()> {
     let second = cp.submit(target, buzz())?;
     refresh_until(&cp, &pd, || second.status().is_some());
     assert_eq!(second.status(), Some(Ok(())));
+    Ok(())
+}
+
+fn poll_next<S: Stream + Unpin>(stream: &mut S, cx: &mut Context<'_>) -> Poll<Option<S::Item>> {
+    Pin::new(stream).poll_next(cx)
+}
+
+#[test]
+fn event_stream_yields_pd_events() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    let (counter, waker) = counting_waker();
+    let mut cx = Context::from_waker(&waker);
+    let mut events = cp.events();
+    while let Poll::Ready(_) = poll_next(&mut events, &mut cx) {}
+    pd.submit(card())?;
+    refresh_until(&cp, &pd, || counter.wakes.load(Ordering::SeqCst) > 0);
+    match poll_next(&mut events, &mut cx) {
+        Poll::Ready(Some((pd_index, CpEvent::Event(Event::CardRead(_))))) => {
+            assert_eq!(pd_index, target)
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+    Ok(())
+}
+
+#[test]
+fn stream_waker_runs_after_refresh_returns() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    let cp_ptr: *const ControlPanel = &cp;
+    arm_probe(move || unsafe { &*cp_ptr }.submit(target, buzz()).is_ok());
+    let (counter, waker) = counting_waker();
+    let mut cx = Context::from_waker(&waker);
+    let mut events = cp.events();
+    while let Poll::Ready(_) = poll_next(&mut events, &mut cx) {}
+    pd.submit(card())?;
+    refresh_until(&cp, &pd, || counter.wakes.load(Ordering::SeqCst) > 0);
+    assert_eq!(counter.wakes_inside_callback.load(Ordering::SeqCst), 0);
+    Ok(())
+}
+
+#[test]
+fn stream_yields_events_queued_before_it_existed() -> Result<()> {
+    let (cp, _target, pd) = secure_pair()?;
+    pd.submit(card())?;
+    refresh_until(&cp, &pd, || cp.next_event().is_some());
+    pd.submit(card())?;
+    let submitted = pd.submit(card())?;
+    refresh_until(&cp, &pd, || submitted.status().is_some());
+    for _ in 0..20 {
+        refresh_both(&cp, &pd);
+    }
+    let (_counter, waker) = counting_waker();
+    let mut cx = Context::from_waker(&waker);
+    let mut events = cp.events();
+    let mut cards = 0;
+    while let Poll::Ready(Some((_, item))) = poll_next(&mut events, &mut cx) {
+        if matches!(item, CpEvent::Event(Event::CardRead(_))) {
+            cards += 1;
+        }
+    }
+    assert_eq!(cards, 2);
+    drop(events);
+    assert!(cp.next_event().is_none());
+    Ok(())
+}
+
+#[test]
+fn stream_respects_queue_overflow() -> Result<()> {
+    let (cp_bus, pd_bus) = MemoryChannel::new();
+    let pd = PeripheralDevice::new(
+        pd_info()?
+            .capability(Capability::new(CapFunction::CommunicationSecurity, 1, 1))
+            .secure_channel_key(KEY),
+        Box::new(pd_bus),
+    )?;
+    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus))
+        .event_queue_capacity(core::num::NonZeroUsize::new(1).unwrap());
+    let target = builder.add_pd(pd_info()?.secure_channel_key(KEY))?;
+    let cp = builder.build()?;
+    refresh_until(&cp, &pd, || cp.is_online(target) && cp.is_secure(target));
+    while cp.next_event().is_some() {}
+    let (_counter, waker) = counting_waker();
+    let mut cx = Context::from_waker(&waker);
+    let mut events = cp.events();
+    assert!(poll_next(&mut events, &mut cx).is_pending());
+    for _ in 0..3 {
+        pd.submit(card())?;
+    }
+    refresh_until(&cp, &pd, || cp.dropped_events() >= 2);
+    assert!(matches!(
+        poll_next(&mut events, &mut cx),
+        Poll::Ready(Some(_))
+    ));
+    Ok(())
+}
+
+#[test]
+fn notification_stream_yields_link_changes() -> Result<()> {
+    let (cp_bus, pd_bus) = MemoryChannel::new();
+    let pd_bus = ReadCounter::new(pd_bus, &PD_READS);
+    let pd = PeripheralDevice::new(
+        pd_info()?
+            .flag(libosdp::Flag::EnableNotification)
+            .capability(Capability::new(CapFunction::CommunicationSecurity, 1, 1))
+            .secure_channel_key(KEY),
+        Box::new(pd_bus),
+    )?;
+    let mut builder = ControlPanelBuilder::new(Box::new(cp_bus));
+    builder.add_pd(pd_info()?.secure_channel_key(KEY))?;
+    let cp = builder.build()?;
+    let pd_ptr: *const PeripheralDevice = &pd;
+    arm_probe(move || {
+        let before = PD_READS.with(|r| r.get());
+        unsafe { &*pd_ptr }.refresh();
+        PD_READS.with(|r| r.get()) != before
+    });
+    let (counter, waker) = counting_waker();
+    let mut cx = Context::from_waker(&waker);
+    let mut notifications = pd.notifications();
+    assert!(poll_next(&mut notifications, &mut cx).is_pending());
+    refresh_until(&cp, &pd, || counter.wakes.load(Ordering::SeqCst) > 0);
+    assert_eq!(counter.wakes_inside_callback.load(Ordering::SeqCst), 0);
+    assert!(matches!(
+        poll_next(&mut notifications, &mut cx),
+        Poll::Ready(Some(_))
+    ));
     Ok(())
 }

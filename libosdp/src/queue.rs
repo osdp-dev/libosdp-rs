@@ -42,6 +42,11 @@ impl<T> DrainQueue<T> {
         self.items.borrow_mut().pop_front()
     }
 
+    #[cfg(feature = "async")]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.items.borrow().is_empty()
+    }
+
     pub(crate) fn dropped(&self) -> usize {
         self.dropped.get()
     }

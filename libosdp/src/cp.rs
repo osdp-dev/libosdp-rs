@@ -216,7 +216,8 @@ impl ControlPanel {
         self.wake_waiting();
     }
 
-    /// Wake the tasks whose submissions LibOSDP completed during the call
+    /// Wake the tasks whose submissions LibOSDP completed, and the one
+    /// waiting on the event stream when events are queued, during the call
     /// that just returned.
     ///
     /// Called from inside one of this context's callbacks, it wakes nothing:
@@ -228,6 +229,12 @@ impl ControlPanel {
                 return;
             }
             self.wakeups.get().wake_all();
+            let events = self.events.get();
+            if !events.queue.is_empty() {
+                if let Some(waker) = events.stream_waker.take() {
+                    waker.wake();
+                }
+            }
         }
     }
 
@@ -330,6 +337,20 @@ impl ControlPanel {
         let dropped = unsafe { libosdp_sys::osdp_cp_flush_commands(self.ctx, pd.as_c()) };
         self.wake_waiting();
         usize::try_from(dropped).unwrap_or(0)
+    }
+
+    /// The events and notifications that [`next_event`](Self::next_event)
+    /// hands over, as a stream that wakes its task after a refresh queues
+    /// one. Refreshing is still up to the application, for example with
+    /// [`refresh`](Self::refresh).
+    #[cfg(feature = "async")]
+    pub fn events(&self) -> crate::EventStream<'_> {
+        crate::EventStream::new(self)
+    }
+
+    #[cfg(feature = "async")]
+    pub(crate) fn park_event_waker(&self, waker: &core::task::Waker) {
+        self.events.get().stream_waker.register(waker);
     }
 
     /// Take the oldest event that PDs reported, or notification that
