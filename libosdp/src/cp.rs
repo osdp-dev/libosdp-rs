@@ -238,6 +238,29 @@ impl ControlPanel {
         }
     }
 
+    /// Refresh this context forever, awaiting `tick()` between refreshes.
+    ///
+    /// Join it with the application's futures on a local executor. It never
+    /// returns; drop its future to stop it, for example by selecting it
+    /// against the application's.
+    ///
+    /// Make `tick` a timer of at most 50ms, such as `tokio::time::sleep` or
+    /// an embassy `Timer`: LibOSDP needs refreshing about that often, and a
+    /// longer tick delays protocol traffic and completions. A tick that is
+    /// ready at once, such as `async {}`, never yields, so `run` spins and
+    /// starves the futures joined with it.
+    #[cfg(feature = "async")]
+    pub async fn run<F, Fut>(&self, mut tick: F) -> !
+    where
+        F: FnMut() -> Fut,
+        Fut: core::future::Future<Output = ()>,
+    {
+        loop {
+            self.refresh();
+            tick().await;
+        }
+    }
+
     /// Queue `cmd` for `pd`; the returned handle reports how it ended, once
     /// [`ControlPanel::refresh`] has run it.
     ///
@@ -342,7 +365,7 @@ impl ControlPanel {
     /// The events and notifications that [`next_event`](Self::next_event)
     /// hands over, as a stream that wakes its task after a refresh queues
     /// one. Refreshing is still up to the application, for example with
-    /// [`refresh`](Self::refresh).
+    /// [`run`](Self::run).
     #[cfg(feature = "async")]
     pub fn events(&self) -> crate::EventStream<'_> {
         crate::EventStream::new(self)

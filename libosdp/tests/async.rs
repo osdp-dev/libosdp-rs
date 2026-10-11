@@ -419,3 +419,60 @@ fn notification_stream_yields_link_changes() -> Result<()> {
     ));
     Ok(())
 }
+
+/// A tick that gives the executor a turn and paces the loop, and fails
+/// the test past `deadline` rather than let a broken driver hang it.
+async fn tick(deadline: Instant) {
+    assert!(Instant::now() < deadline, "app never finished");
+    std::thread::sleep(Duration::from_millis(2));
+    let mut yielded = false;
+    futures::future::poll_fn(|cx| {
+        if yielded {
+            return Poll::Ready(());
+        }
+        yielded = true;
+        cx.waker().wake_by_ref();
+        Poll::Pending
+    })
+    .await
+}
+
+/// Run `app` until it finishes, with both contexts' drivers joined to it.
+fn run_with<T>(cp: &ControlPanel, pd: &PeripheralDevice, app: impl Future<Output = T>) -> T {
+    use futures::future::{select, Either};
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let drivers = futures::future::join(cp.run(|| tick(deadline)), pd.run(|| tick(deadline)));
+    futures::executor::block_on(async {
+        futures::pin_mut!(app);
+        futures::pin_mut!(drivers);
+        match select(app, drivers).await {
+            Either::Left((value, _)) => value,
+            Either::Right(_) => unreachable!(),
+        }
+    })
+}
+
+#[test]
+fn run_drives_an_awaited_command() -> Result<()> {
+    let (cp, target, pd) = secure_pair()?;
+    pd.set_command_handler(|_, _: &mut Responder<'_>| Ok(()));
+    let result = run_with(&cp, &pd, async { cp.submit(target, buzz()).unwrap().await });
+    assert_eq!(result, Ok(()));
+    Ok(())
+}
+
+#[test]
+fn run_with_a_yielding_tick_lets_joined_futures_finish() -> Result<()> {
+    use futures::StreamExt;
+    let (cp, target, pd) = secure_pair()?;
+    while cp.next_event().is_some() {}
+    let item = run_with(&cp, &pd, async {
+        pd.submit(card()).unwrap();
+        cp.events().next().await
+    });
+    assert!(matches!(
+        item,
+        Some((pd_index, CpEvent::Event(Event::CardRead(_)))) if pd_index == target
+    ));
+    Ok(())
+}

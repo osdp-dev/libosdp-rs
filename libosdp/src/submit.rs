@@ -162,7 +162,7 @@ mod future {
 
     /// Resolves once LibOSDP is done with the submission. Polling never
     /// drives LibOSDP: something must keep refreshing the context, such as
-    /// [`ControlPanel::refresh`](crate::ControlPanel::refresh).
+    /// [`ControlPanel::run`](crate::ControlPanel::run).
     impl Future for Submission<'_> {
         type Output = Result<(), CompletionError>;
 

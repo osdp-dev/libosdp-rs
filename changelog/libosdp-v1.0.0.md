@@ -125,6 +125,10 @@ Release subject ## TODO
 - async: Read CP events and notifications with ControlPanel::events()
   and PD notifications with PeripheralDevice::notifications(), as
   streams that wake their task once a refresh has queued something
+- async: Add ControlPanel::run() and PeripheralDevice::run(), which
+  refresh the context forever and await a caller-supplied tick between
+  refreshes, to join with the application's futures on any local
+  executor
 - cp: Take a PD off the bus and back with ControlPanel::disable and
   enable, and check which it is with is_enabled
 - metrics: Read a link's health counters -- packets, check errors, NAKs,

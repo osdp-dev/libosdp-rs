@@ -63,10 +63,11 @@
 //!     derive `defmt::Format` for most public types.
 //!   - `serde`: derive `Serialize` and `Deserialize` for the public data
 //!     types.
-//!   - `async`: await a [`Submission`] for how it ended, and read CP events
-//!     and PD notifications as a `Stream`. Wakers run only after the call
-//!     that queued or completed something returns, never inside a LibOSDP
-//!     callback.
+//!   - `async`: await a [`Submission`] for how it ended, read CP events
+//!     and PD notifications as a `Stream`, and keep a context refreshed
+//!     with `run`, on any local executor. Wakers run only after the call
+//!     that queued or completed something returns, never inside a
+//!     LibOSDP callback.
 //!   - `trs`: build LibOSDP's transparent reader support, which
 //!     [`Command::Trs`] and [`Event::Trs`] need. Without it, LibOSDP refuses
 //!     those commands with [`Error::Rejected`].
