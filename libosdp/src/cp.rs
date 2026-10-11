@@ -137,13 +137,19 @@ impl ControlPanelBuilder {
             busy: Cell::new(false),
             channel,
             events: Shared::new(CpEvents::new(self.event_queue_capacity)),
+            #[cfg(feature = "async")]
+            wakeups: Shared::new(Default::default()),
             file_ops: Vec::new(),
         };
+        #[cfg(feature = "async")]
+        let completion_arg = cp.wakeups.data();
+        #[cfg(not(feature = "async"))]
+        let completion_arg = core::ptr::null_mut();
         let completions = unsafe {
             libosdp_sys::osdp_cp_set_command_completion_callback(
                 ctx,
                 Some(cp_command_complete),
-                core::ptr::null_mut(),
+                completion_arg,
             )
         };
         let events = unsafe {
@@ -178,6 +184,8 @@ pub struct ControlPanel {
     #[allow(dead_code)]
     channel: OwnedChannel,
     events: Shared<CpEvents>,
+    #[cfg(feature = "async")]
+    wakeups: Shared<crate::wake::Wakeups>,
     file_ops: Vec<OwnedFileOps>,
 }
 
@@ -199,10 +207,28 @@ impl ControlPanel {
     /// That includes application code that [`submit`](Self::submit)
     /// runs, such as [`FileOps::open`] when starting a file transfer.
     pub fn refresh(&self) {
-        let Some(_busy) = Busy::enter(&self.busy) else {
-            return;
-        };
-        unsafe { libosdp_sys::osdp_cp_refresh(self.ctx) }
+        {
+            let Some(_busy) = Busy::enter(&self.busy) else {
+                return;
+            };
+            unsafe { libosdp_sys::osdp_cp_refresh(self.ctx) }
+        }
+        self.wake_waiting();
+    }
+
+    /// Wake the tasks whose submissions LibOSDP completed during the call
+    /// that just returned.
+    ///
+    /// Called from inside one of this context's callbacks, it wakes nothing:
+    /// the refresh that is running wakes them once LibOSDP returns.
+    fn wake_waiting(&self) {
+        #[cfg(feature = "async")]
+        {
+            if self.busy.get() {
+                return;
+            }
+            self.wakeups.get().wake_all();
+        }
     }
 
     /// Queue `cmd` for `pd`; the returned handle reports how it ended, once
@@ -273,12 +299,14 @@ impl ControlPanel {
         cmd: Command,
         wants_reply: bool,
     ) -> Result<(Rc<Slot>, Option<Operation>)> {
-        let Some(_busy) = Busy::enter(&self.busy) else {
+        let Some(busy) = Busy::enter(&self.busy) else {
             return Err(Error::Rejected);
         };
         let kind = cmd.multipart_kind();
         let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_cmd::try_from(cmd)?);
         let rc = unsafe { libosdp_sys::osdp_cp_submit_command(self.ctx, pd.as_c(), raw) };
+        drop(busy);
+        self.wake_waiting();
         if rc < 0 {
             unsafe { RawSubmission::reclaim(raw) };
             return Err(Error::Rejected);
@@ -300,6 +328,7 @@ impl ControlPanel {
     /// Returns how many were dropped.
     pub fn flush(&self, pd: PdIndex) -> usize {
         let dropped = unsafe { libosdp_sys::osdp_cp_flush_commands(self.ctx, pd.as_c()) };
+        self.wake_waiting();
         usize::try_from(dropped).unwrap_or(0)
     }
 

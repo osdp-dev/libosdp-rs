@@ -39,9 +39,24 @@ impl<T> RawSubmission<T> {
         drop(unsafe { Box::from_raw(raw.cast::<RawSubmission<T>>()) });
     }
 
-    unsafe fn complete(raw: *mut T, status: libosdp_sys::osdp_completion_status) {
+    /// # Safety
+    ///
+    /// `raw` came from [`RawSubmission::into_raw`] and LibOSDP is done with
+    /// it; `wakeups` is null or points at the context's
+    /// [`Wakeups`](crate::wake::Wakeups).
+    unsafe fn complete(
+        raw: *mut T,
+        status: libosdp_sys::osdp_completion_status,
+        wakeups: *mut c_void,
+    ) {
         let boxed = unsafe { Box::from_raw(raw.cast::<RawSubmission<T>>()) };
         boxed.slot.complete(completion(status));
+        #[cfg(feature = "async")]
+        if let (Some(waker), false) = (boxed.slot.take_waker(), wakeups.is_null()) {
+            unsafe { &*(wakeups as *const crate::wake::Wakeups) }.defer(waker);
+        }
+        #[cfg(not(feature = "async"))]
+        let _ = wakeups;
     }
 }
 
@@ -59,7 +74,7 @@ fn completion(status: libosdp_sys::osdp_completion_status) -> Result<(), Complet
 }
 
 pub(crate) unsafe extern "C" fn cp_command_complete(
-    _arg: *mut c_void,
+    arg: *mut c_void,
     _pd: ::core::ffi::c_int,
     cmd: *mut libosdp_sys::osdp_cmd,
     status: libosdp_sys::osdp_completion_status,
@@ -67,18 +82,18 @@ pub(crate) unsafe extern "C" fn cp_command_complete(
     if cmd.is_null() {
         return;
     }
-    unsafe { RawSubmission::complete(cmd, status) }
+    unsafe { RawSubmission::complete(cmd, status, arg) }
 }
 
 pub(crate) unsafe extern "C" fn pd_event_complete(
-    _arg: *mut c_void,
+    arg: *mut c_void,
     event: *mut libosdp_sys::osdp_event,
     status: libosdp_sys::osdp_completion_status,
 ) {
     if event.is_null() {
         return;
     }
-    unsafe { RawSubmission::complete(event, status) }
+    unsafe { RawSubmission::complete(event, status, arg) }
 }
 
 #[cfg(test)]
@@ -122,5 +137,45 @@ mod tests {
             )
         };
         assert_eq!(handle.status(), Some(Err(CompletionError::Flushed)));
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn completion_defers_the_waker_instead_of_waking() {
+        use crate::wake::Wakeups;
+        use alloc::{sync::Arc, task::Wake};
+        use core::{
+            future::Future,
+            pin::Pin,
+            sync::atomic::{AtomicUsize, Ordering},
+            task::{Context, Waker},
+        };
+
+        struct Count(AtomicUsize);
+        impl Wake for Count {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let count = Arc::new(Count(AtomicUsize::new(0)));
+        let waker = Waker::from(count.clone());
+        let wakeups = Wakeups::default();
+        let (raw, slot) = RawSubmission::into_raw(keyset());
+        let mut handle: Submission<'_> = Submission::new(slot, None);
+        assert!(Pin::new(&mut handle)
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending());
+        unsafe {
+            cp_command_complete(
+                &wakeups as *const Wakeups as *mut c_void,
+                0,
+                raw,
+                libosdp_sys::osdp_completion_status_OSDP_COMPLETION_OK,
+            )
+        };
+        assert_eq!(count.0.load(Ordering::SeqCst), 0);
+        wakeups.wake_all();
+        assert_eq!(count.0.load(Ordering::SeqCst), 1);
     }
 }

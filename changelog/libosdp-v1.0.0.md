@@ -118,6 +118,10 @@ Release subject ## TODO
 - commands: Add Command::TimeDate, OSDP's obsolete date and time set
   (osdp_TDSET), for older PDs that keep time. A date or time out of
   range is refused with Error::InvalidArgument
+- async: Add an async feature. A Submission is a Future that resolves
+  into how the command or event ended, or into the reply of a PIV or
+  authenticate command. Tasks are woken after refresh(), flush() or
+  submit() returns, never from inside a LibOSDP callback
 - cp: Take a PD off the bus and back with ControlPanel::disable and
   enable, and check which it is with is_enabled
 - metrics: Read a link's health counters -- packets, check errors, NAKs,

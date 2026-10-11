@@ -144,6 +144,8 @@ pub struct PeripheralDevice {
     #[allow(dead_code)]
     channel: OwnedChannel,
     command_handler: Shared<PdCommandSlot>,
+    #[cfg(feature = "async")]
+    wakeups: Shared<crate::wake::Wakeups>,
     file_ops: Option<OwnedFileOps>,
 }
 
@@ -179,13 +181,19 @@ impl PeripheralDevice {
                 handler: CallbackSlot::new(),
                 notifications: DrainQueue::new(NOTIFICATION_QUEUE_CAPACITY),
             }),
+            #[cfg(feature = "async")]
+            wakeups: Shared::new(Default::default()),
             file_ops: None,
         };
+        #[cfg(feature = "async")]
+        let completion_arg = pd.wakeups.data();
+        #[cfg(not(feature = "async"))]
+        let completion_arg = core::ptr::null_mut();
         let completions = unsafe {
             libosdp_sys::osdp_pd_set_event_completion_callback(
                 ctx,
                 Some(pd_event_complete),
-                core::ptr::null_mut(),
+                completion_arg,
             )
         };
         let commands = unsafe {
@@ -211,10 +219,28 @@ impl PeripheralDevice {
     ///
     /// Called from inside one of this context's callbacks, it does nothing.
     pub fn refresh(&self) {
-        let Some(_busy) = Busy::enter(&self.busy) else {
-            return;
-        };
-        unsafe { libosdp_sys::osdp_pd_refresh(self.ctx) }
+        {
+            let Some(_busy) = Busy::enter(&self.busy) else {
+                return;
+            };
+            unsafe { libosdp_sys::osdp_pd_refresh(self.ctx) }
+        }
+        self.wake_waiting();
+    }
+
+    /// Wake the tasks whose submissions LibOSDP completed during the call
+    /// that just returned.
+    ///
+    /// Called from inside one of this context's callbacks, it wakes nothing:
+    /// the refresh that is running wakes them once LibOSDP returns.
+    fn wake_waiting(&self) {
+        #[cfg(feature = "async")]
+        {
+            if self.busy.get() {
+                return;
+            }
+            self.wakeups.get().wake_all();
+        }
     }
 
     /// Drop the events queued for the CP that have not been sent yet; each
@@ -222,6 +248,7 @@ impl PeripheralDevice {
     /// Returns how many were dropped.
     pub fn flush(&self) -> usize {
         let dropped = unsafe { libosdp_sys::osdp_pd_flush_events(self.ctx) };
+        self.wake_waiting();
         usize::try_from(dropped).unwrap_or(0)
     }
 
@@ -231,6 +258,7 @@ impl PeripheralDevice {
     pub fn submit(&self, event: Event) -> Result<Submission<'_>> {
         let (raw, slot) = RawSubmission::into_raw(libosdp_sys::osdp_event::try_from(event)?);
         let rc = unsafe { libosdp_sys::osdp_pd_submit_event(self.ctx, raw) };
+        self.wake_waiting();
         if rc < 0 {
             unsafe { RawSubmission::reclaim(raw) };
             return Err(Error::Rejected);

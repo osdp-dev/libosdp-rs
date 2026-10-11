@@ -63,6 +63,9 @@
 //!     derive `defmt::Format` for most public types.
 //!   - `serde`: derive `Serialize` and `Deserialize` for the public data
 //!     types.
+//!   - `async`: await a [`Submission`] for how it ended. Wakers run only
+//!     after the call that completed the submission returns, never inside
+//!     a LibOSDP callback.
 //!   - `trs`: build LibOSDP's transparent reader support, which
 //!     [`Command::Trs`] and [`Event::Trs`] need. Without it, LibOSDP refuses
 //!     those commands with [`Error::Rejected`].
@@ -100,6 +103,8 @@ mod queue;
 mod status;
 mod submit;
 mod trs;
+#[cfg(feature = "async")]
+mod wake;
 
 // Re-export for convenience
 pub use channel::*;

@@ -29,8 +29,10 @@ multiqueue = "0.3.2"
 rand = "0.10.1"
 ringbuf = "0.5.0"
 sha256 = "1.6.0"
+futures = { version = "0.3.31", default-features = false, features = ["std", "executor"] }
 
 [features]
+async = []
 default = ["std"]
 defmt = ["embedded-io/defmt", "dep:defmt"]
 log = ["dep:log"]

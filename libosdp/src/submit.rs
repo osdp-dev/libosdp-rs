@@ -21,6 +21,8 @@ pub(crate) struct Slot {
     status: Cell<Option<Result<(), CompletionError>>>,
     reply: RefCell<Option<PivReply>>,
     has_handle: Cell<bool>,
+    #[cfg(feature = "async")]
+    waker: crate::wake::WakerSlot,
 }
 
 impl Slot {
@@ -42,6 +44,11 @@ impl Slot {
 
     pub(crate) fn set_reply(&self, reply: PivReply) {
         *self.reply.borrow_mut() = Some(reply);
+    }
+
+    #[cfg(feature = "async")]
+    pub(crate) fn take_waker(&self) -> Option<core::task::Waker> {
+        self.waker.take()
     }
 }
 
@@ -140,5 +147,48 @@ impl<R> core::fmt::Debug for Submission<'_, R> {
         f.debug_struct("Submission")
             .field("status", &self.slot.status.get())
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "async")]
+mod future {
+    use super::Submission;
+    use crate::{CompletionError, PivReply};
+    use core::{
+        future::Future,
+        pin::Pin,
+        task::{Context, Poll},
+    };
+
+    /// Resolves once LibOSDP is done with the submission. Polling never
+    /// drives LibOSDP: something must keep refreshing the context, such as
+    /// [`ControlPanel::refresh`](crate::ControlPanel::refresh).
+    impl Future for Submission<'_> {
+        type Output = Result<(), CompletionError>;
+
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            match self.status() {
+                Some(status) => Poll::Ready(status),
+                None => {
+                    self.slot.waker.register(cx.waker());
+                    Poll::Pending
+                }
+            }
+        }
+    }
+
+    /// Resolves into the smart card's reply, or how the command failed.
+    impl Future for Submission<'_, PivReply> {
+        type Output = Result<PivReply, CompletionError>;
+
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            match self.status() {
+                Some(status) => Poll::Ready(status),
+                None => {
+                    self.slot.waker.register(cx.waker());
+                    Poll::Pending
+                }
+            }
+        }
     }
 }
