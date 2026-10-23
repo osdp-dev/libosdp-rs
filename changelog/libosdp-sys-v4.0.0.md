@@ -22,6 +22,47 @@ Release subject ## TODO
 
 ## Changes
 
+- 0dbf5b8 Update author email to sidcha@osdp.dev
+- 7894df2 file: Abort the transfer when the PD cannot store a chunk
+- 8e29229 file: Keep the PD online when it aborts a transfer
+- f0d1dca pd: NAK a file transfer frame the PD cannot take
+- d64ca17 tests: Wait in seconds in the hotplug state helpers
+- 36b76f6 tests: Publish command suite captures before their flags
+- cfd4faf scripts: Read the whole macro dump in the armhf check
+- b6dacf8 tests: Run the permanent busy case without SC
+- aa43941 tests: Wait for the CP to drop SC after KEYSET
+- 5cc989d tests: Publish the event copy before flagging it seen
+- b4b9b3a scripts: Run linux-arm .NET tests serially under QEMU
+- c8ecf89 scripts: Hand tar a POSIX temp path on Windows
+- 9431f59 zephyr: Add CONFIG_LIBOSDP_TRS to build TRS
+- 2b7a4ff ci: Restore .NET once before the parallel test runs
+- 8125260 python: Build the extension as C11 under MSVC
+- 9df7a0b tests: Wait for the busy retry to complete
+- 109d958 scripts: Emulate only the runtime for linux-arm .NET tests
+- 187e651 scripts: Build linux-arm for the hard-float ABI
+- 5849564 ci: Compile osdp_trs.c with TRS on in the bare-metal check
+- 4684ab6 cmake: Install the shared library's DLL on Windows
+- c531004 osdp: Build the test_<fn> aliases on macOS
+- f66cba4 dotnet: Register file operations before the first refresh
+- 2460734 release: Build after CI and release before publishing
+- c68da51 ci: Add the package workflow
+- 36c99f8 ci: Group the cross-platform build by runner
+- 59c6eb9 scripts: Build several runtime IDs in parallel
+- a545a82 python: Add a portable wheel smoke test
+- cb7376b dotnet: Exercise every command and event end to end
+- 6c27f0d README: Add the .NET binding
+- ff2cd49 release: Publish LibOSDP to NuGet
+- 29ace51 ci: Pack and test the .NET package
+- 7d39dd7 dotnet: Add examples and package readme
+- c2953b0 dotnet: Add file transfer, management and logging
+- 34d002d dotnet: Add ControlPanel and PeripheralDevice
+- d80ff4c dotnet: Add channels
+- b43279e dotnet: Add events and their marshalling
+- d57b201 dotnet: Add commands and their marshalling
+- 14d9bf0 dotnet: Add interop layer and ABI guard
+- d06d44a ci: Reuse the cross-platform build in releases
+- 2271b4f ci: Build per-RID native artifacts
+- 572f564 scripts: Add build-native.sh for shipped binaries
 - d3f743d api: Say when a multi-part BIOREADR event follows its completion
 - 0efd64a api: Allow registering file ops only before the first refresh
 - b008a19 api: Allow setting callbacks only before the first refresh

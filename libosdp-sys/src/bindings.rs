@@ -1450,7 +1450,7 @@ pub type osdp_file_read_fn_t = ::core::option::Option<
         offset: u32,
     ) -> ::core::ffi::c_int,
 >;
-#[doc = " @brief Write a chunk of file data from buffer to disk.\n\n @param arg Opaque pointer that was provided in @ref osdp_file_ops when the\n ops struct was registered.\n @param buf Buffer with file data to be stored to disk\n @param size Number of bytes to write to disk\n @param offset Number of bytes from the beginning of the file to\n start writing too.\n\n @retval Number of bytes written\n @retval 0 on EOF\n @retval -ve on errors.\n\n @note LibOSDP will guarantee that size and offset params are always\n positive and size is always greater than or equal to offset."]
+#[doc = " @brief Write a chunk of file data from buffer to disk.\n\n @param arg Opaque pointer that was provided in @ref osdp_file_ops when the\n ops struct was registered.\n @param buf Buffer with file data to be stored to disk\n @param size Number of bytes to write to disk\n @param offset Number of bytes from the beginning of the file to\n start writing too.\n\n @retval Number of bytes written\n @retval 0 on EOF\n @retval -ve on errors.\n\n Writing fewer than @p size bytes ends the transfer: the PD answers the CP\n with the abort status of osdp_FTSTAT and closes the file.\n\n @note LibOSDP will guarantee that size and offset params are always\n positive and size is always greater than or equal to offset."]
 pub type osdp_file_write_fn_t = ::core::option::Option<
     unsafe extern "C" fn(
         arg: *mut ::core::ffi::c_void,
