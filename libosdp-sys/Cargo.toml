@@ -2,7 +2,7 @@
 name = "libosdp-sys"
 version = "4.0.0-dev"
 edition = "2021"
-authors = ["Siddharth Chandrasekaran <sidcha.dev@gmail.com>"]
+authors = ["Siddharth Chandrasekaran <sidcha@osdp.dev>"]
 description = "Sys crate for https://github.com/osdp-dev/libosdp"
 documentation = "https://docs.rs/libosdp-sys"
 homepage = "https://doc.osdp.dev/"

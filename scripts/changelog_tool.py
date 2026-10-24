@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-#  Copyright (c) 2026 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+#  Copyright (c) 2026 Siddharth Chandrasekaran <sidcha@osdp.dev>
 #
 #  SPDX-License-Identifier: Apache-2.0
 #
