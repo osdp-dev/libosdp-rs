@@ -17,7 +17,7 @@ doctest = false
 
 [build-dependencies]
 anyhow = "1.0.100"
-bindgen = "0.72.1"
+bindgen = "0.73.2"
 build-target = "0.8.0"
 cc = "1.2.54"
 
