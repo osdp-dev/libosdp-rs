@@ -22,9 +22,9 @@ pub const OSDP_EVENT_KEYPRESS_MAX_DATALEN: u32 = 64;
 pub const OSDP_EVENT_MFGREP_MAX_DATALEN: u32 = 128;
 pub const OSDP_EVENT_MFGSTAT_MAX_DATALEN: u32 = 128;
 pub const OSDP_EVENT_BIOREADR_MAX_TEMPLATE_LEN: u32 = 256;
+pub const OSDP_PD_CMD_BUSY: u32 = 1;
 pub const OSDP_ABI_OPT_RX_ZERO_COPY: u32 = 1;
 pub const OSDP_ABI_OPT_LOG_MINIMAL: u32 = 2;
-pub const OSDP_ABI_OPT_TRS: u32 = 4;
 #[doc = " Dummy."]
 pub const osdp_pd_cap_function_code_e_OSDP_PD_CAP_UNUSED: osdp_pd_cap_function_code_e = 0;
 #[doc = " This function indicates the ability to monitor the status of a switch\n using a two-wire electrical connection between the PD and the switch.\n The on/off position of the switch indicates the state of an external\n device.\n\n The PD may simply resolve all circuit states to an open/closed\n status, or it may implement supervision of the monitoring circuit. A\n supervised circuit is able to indicate circuit fault status in\n addition to open/closed status."]
@@ -176,7 +176,7 @@ pub struct osdp_pd_info_t {
     pub id: osdp_pd_id,
     #[doc = " This is a pointer to an array of structures containing the PD'\n capabilities. Use { OSDP_PD_CAP_SENTINEL, 0, 0 } to terminate the\n array. This is used only PD mode of operation"]
     pub cap: *const osdp_pd_cap,
-    #[doc = " Pointer to 16 bytes of Secure Channel Base Key for the PD. If\n non-null, this is used to set-up the secure channel.\n\n When NULL, the secure channel is disabled for this PD and the link\n runs in plain text. The one exception is a PD that also passes\n @ref OSDP_FLAG_INSTALL_MODE, which brings the channel up on SCBK-D\n so a CP can provision the real key. Passing NULL with\n @ref OSDP_FLAG_ENFORCE_SECURE fails setup."]
+    #[doc = " Pointer to 16 bytes of Secure Channel Base Key for the PD. If\n non-null, this is used to set-up the secure channel.\n\n When NULL, the secure channel is disabled for this PD and the link\n runs in plain text. The one exception is a PD that also passes\n @ref OSDP_FLAG_INSTALL_MODE, which brings the channel up on SCBK-D\n so a CP can provision the real key. Passing NULL with\n @ref OSDP_FLAG_ENFORCE_SECURE fails setup.\n\n SCBK-D (the default key published in the spec) and an all-zero key\n are not real keys: setup logs an error and treats them as NULL, so\n the rules above for NULL apply."]
     pub scbk: *const u8,
 }
 #[doc = " @brief To keep the OSDP internal data structures from polluting the exposed\n headers, they are typedefed to void before sending them to the upper layers.\n This level of abstraction looked reasonable as _technically_ no one should\n attempt to modify it outside of the LibOSDP and their definition may change\n at any time."]
@@ -187,7 +187,7 @@ pub const osdp_status_report_type_OSDP_STATUS_REPORT_INPUT: osdp_status_report_t
 pub const osdp_status_report_type_OSDP_STATUS_REPORT_OUTPUT: osdp_status_report_type = 1;
 #[doc = " @brief Local tamper and power status report\n\n Always two entries, one byte each: report[0] is tamper, report[1] is\n power."]
 pub const osdp_status_report_type_OSDP_STATUS_REPORT_LOCAL: osdp_status_report_type = 2;
-#[doc = " @brief Reader tamper status report\n\n One byte per attached reader (see OSDP_PD_CAP_READERS); report[i] is\n the status of reader i: 0 = normal, 1 = not connected, 2 = tamper."]
+#[doc = " @brief Reader tamper status report\n\n One byte per connected downstream reader (OSDP_PD_CAP_READERS);\n report[0] is reader 1. Each is 0 = normal, 1 = not connected,\n 2 = tamper."]
 pub const osdp_status_report_type_OSDP_STATUS_REPORT_READER: osdp_status_report_type = 3;
 #[doc = " @brief OSDP Status report types"]
 pub type osdp_status_report_type = ::core::ffi::c_uchar;
@@ -199,7 +199,7 @@ pub struct osdp_status_report {
     pub type_: osdp_status_report_type,
     #[doc = " Number of valid entries in `report`"]
     pub nr_entries: ::core::ffi::c_int,
-    #[doc = " Status report; one byte per entry"]
+    #[doc = " Status report; one byte per entry. For OSDP_STATUS_REPORT_READER,\n report[0] is reader 1, the first connected downstream reader"]
     pub report: [u8; 64usize],
 }
 #[doc = "< 0x00 Default"]
@@ -514,7 +514,7 @@ pub struct osdp_cmd_comset {
     #[doc = " Baud rate.\n\n Valid values: 9600, 19200, 38400, 115200, 230400."]
     pub baud_rate: u32,
 }
-#[doc = " @brief This command transfers an encryption key from the CP to a PD."]
+#[doc = " @brief This command transfers an encryption key from the CP to a PD.\n\n SCBK-D and an all-zero key are refused: on the CP,\n osdp_cp_submit_command() returns -1; on the PD, the command is NAKed with\n OSDP_PD_NAK_RECORD before the command callback is called.\n\n On the PD, a KEYSET that arrives on a secure channel keyed with a real\n SCBK reaches the command callback only once a session on the new key has\n carried a MAC-verified command; until then the PD keeps using its current\n key. The callback persists the key, returning `OSDP_PD_CMD_BUSY` while the\n write runs; 0 makes it the key in use, and an error drops it. In install\n mode the callback is called when the command arrives.\n\n On the CP, the KEYSET completes once a session has settled the key:\n `OSDP_COMPLETION_OK` when the new key is in use, `OSDP_COMPLETION_FAILED`\n when the PD stays on its current key, and `OSDP_COMPLETION_ABORTED` at\n teardown, before either is known. Another KEYSET for that PD is refused\n until then. See\n <a href=\"https://doc.osdp.dev/libosdp/secure-channel\">Secure Channel</a>."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_cmd_keyset {
@@ -542,7 +542,7 @@ pub struct osdp_cmd_mfg {
 pub struct osdp_cmd_file_tx {
     #[doc = " Pre-agreed file ID between CP and PD"]
     pub id: ::core::ffi::c_int,
-    #[doc = " Reserved and set to zero by OSDP spec.\n\n @note: The upper bits are used by libosdp internally (IOW, not sent\n over the OSDP bus). No application-settable flags are defined; to\n stop a running transfer, call osdp_cp_cancel()."]
+    #[doc = " Reserved and set to zero by OSDP spec.\n\n @note: The upper 8 bits are reserved for libosdp; a command that\n sets them is refused. No application flags are defined; to stop a\n running transfer, call osdp_cp_cancel()."]
     pub flags: u32,
 }
 #[doc = " Secure Channel state change. Payload: `sc_status`\n (@ref osdp_notification_sc_status).\n\n Fires on both CP and PD. In CP mode it reports the state of the\n SC session with the addressed PD; in PD mode it reports the state\n of the SC session with the CP."]
@@ -557,8 +557,10 @@ pub const osdp_notification_type_OSDP_NOTIFICATION_MP_PROGRESS: osdp_notificatio
 pub const osdp_notification_type_OSDP_NOTIFICATION_MP_DONE: osdp_notification_type = 4;
 #[doc = " PD ID collected (CP mode). Payload: `pd_id` (@ref osdp_pd_id).\n\n Fires when the CP reads a PD's identity (osdp_PDID) during the INIT\n handshake and it differs from the last one seen for that PD: on\n first contact, or if the device answering an address changed. A\n reconnect that reports the same identity is silent."]
 pub const osdp_notification_type_OSDP_NOTIFICATION_PD_ID: osdp_notification_type = 5;
-#[doc = " TRS card session state change (CP only). Payload: `trs_status`\n (@ref osdp_notification_trs_status).\n\n Fires when the reader enters transparent mode (OPENED), and once more\n when the session ends, either because a STOP was honoured (CLOSED) or\n because it could not be established or was cut short (FAILED)."]
+#[doc = " TRS card session state change. Payload: `trs_status`\n (@ref osdp_notification_trs_status).\n\n In CP mode it fires when the reader enters transparent mode (OPENED),\n and once more when the session ends, either because a STOP was\n honoured (CLOSED) or because it could not be established or was cut\n short (FAILED).\n\n In PD mode it follows the reader's own mode, which the CP sets:\n OPENED when the CP puts it in transparent mode, CLOSED when the CP\n takes it out or restarts the link, and CARD_RELEASED when the CP ends\n its transaction with the card. A CP's presence scan flips the mode\n every few hundred milliseconds, so expect a steady OPENED/CLOSED\n stream while one runs."]
 pub const osdp_notification_type_OSDP_NOTIFICATION_TRS_STATUS: osdp_notification_type = 6;
+#[doc = "< Max notification value"]
+pub const osdp_notification_type_OSDP_NOTIFICATION_SENTINEL: osdp_notification_type = 7;
 #[doc = " @brief LibOSDP notification type\n\n Delivered to the application in CP mode as an @ref osdp_event with type\n @ref OSDP_EVENT_NOTIFICATION and in PD mode as an @ref osdp_cmd with id\n @ref OSDP_CMD_NOTIFICATION. In both cases the payload is a\n @ref osdp_notification. Gated by @ref OSDP_FLAG_ENABLE_NOTIFICATION."]
 pub type osdp_notification_type = ::core::ffi::c_uchar;
 #[doc = "< Transfer completed successfully"]
@@ -640,9 +642,9 @@ pub const osdp_cmd_e_OSDP_CMD_XWR: osdp_cmd_e = 18;
 pub const osdp_cmd_e_OSDP_CMD_SENTINEL: osdp_cmd_e = 19;
 #[doc = " @brief OSDP application exposed commands"]
 pub type osdp_cmd_e = ::core::ffi::c_uchar;
-#[doc = "< Open a card session"]
+#[doc = "< Open a card session; completes once the\n   reader is in transparent mode"]
 pub const osdp_trs_cmd_e_OSDP_TRS_CMD_START: osdp_trs_cmd_e = 1;
-#[doc = "< Close the card session opened by START"]
+#[doc = "< Close the card session opened by START;\n   completes once the reader is back out"]
 pub const osdp_trs_cmd_e_OSDP_TRS_CMD_STOP: osdp_trs_cmd_e = 2;
 #[doc = "< Send a C-APDU to the card"]
 pub const osdp_trs_cmd_e_OSDP_TRS_CMD_SEND_APDU: osdp_trs_cmd_e = 3;
@@ -650,11 +652,11 @@ pub const osdp_trs_cmd_e_OSDP_TRS_CMD_SEND_APDU: osdp_trs_cmd_e = 3;
 pub const osdp_trs_cmd_e_OSDP_TRS_CMD_ENTER_PIN: osdp_trs_cmd_e = 4;
 #[doc = "< Scan for a card in the field"]
 pub const osdp_trs_cmd_e_OSDP_TRS_CMD_CARD_SCAN: osdp_trs_cmd_e = 5;
-#[doc = " @brief Transparent Reader Support (TRS) commands a CP application can issue to\n a smart card in the reader. Set in @c struct osdp_trs_cmd::command and\n submitted as an @c OSDP_CMD_XWR command.\n\n A card session is the band of commands between an @c OSDP_TRS_CMD_START and\n the matching @c OSDP_TRS_CMD_STOP, in submission order:\n\n     START, SEND_APDU, SEND_APDU, ..., STOP\n\n The library owns the wire handshakes the band implies (it negotiates\n transparent mode on START, and disconnects the card and restores the reader\n on STOP) and reports the session's progress as @c OSDP_NOTIFICATION_TRS_STATUS\n events. The band is enforced when a command is submitted, so misuse is an\n error from osdp_cp_submit_command() and never a command that runs and then\n has to be taken back: inside a band only TRS commands are accepted (anything\n else would interrupt the card transaction), and a card command is refused\n outside one (it would reach a reader that is not in transparent mode).\n\n To abandon a session and the APDUs still queued for it, flush the command\n queue (osdp_cp_flush_commands()) and then submit @c OSDP_TRS_CMD_STOP; the\n flushed APDUs are reported to the app individually. If the session ends on its\n own before its STOP is reached -- the reader rejects transparent mode, say --\n the APDUs left in the band are completed @c OSDP_COMPLETION_FLUSHED and an\n @c OSDP_TRS_SESSION_FAILED notification says why.\n\n Knowing @b when to open a band is the reader's job: a smart card entering\n the field is announced as an @c OSDP_EVENT_TRS card-info/card-present event,\n either spontaneously (some readers report cards in their default mode) or\n because a presence scan (osdp_cp_trs_scan_enable()) is briefly holding the\n reader in transparent mode. Either way, react by submitting a START; while\n the scan has the reader in transparent mode the new band adopts it directly,\n with no extra mode negotiation on the wire."]
+#[doc = " @brief Transparent Reader Support (TRS) commands a CP application can issue to\n a smart card in the reader. Set in @c struct osdp_trs_cmd::command and\n submitted as an @c OSDP_CMD_XWR command.\n\n A card session is the band of commands between an @c OSDP_TRS_CMD_START and\n the matching @c OSDP_TRS_CMD_STOP, in submission order:\n\n     START, SEND_APDU, SEND_APDU, ..., STOP\n\n The library owns the wire handshakes the band implies (it negotiates\n transparent mode on START, and disconnects the card and restores the reader\n on STOP), and completes START and STOP on their outcome: START once the\n reader is in transparent mode, STOP once it is back out, and either with\n @c OSDP_COMPLETION_FAILED if the session fails first. The completions are\n all an app needs to follow a session; @c OSDP_NOTIFICATION_TRS_STATUS events\n report the same progress, and why a session failed. The band is enforced when a command is submitted, so misuse is an\n error from osdp_cp_submit_command() and never a command that runs and then\n has to be taken back: inside a band only TRS commands are accepted (anything\n else would interrupt the card transaction), a card command is refused\n outside one (it would reach a reader that is not in transparent mode), and\n a command naming a different reader than the band's START is refused (a band\n talks to one card; see @c struct osdp_trs_cmd::reader).\n\n A reader may acknowledge a card command and answer it on a later poll, as a\n slow card or a PIN entry requires. The command then completes when its\n answer arrives, and the band waits for it before sending the next card\n command: a reader that stays silent for @c OSDP_TRS_ANSWER_TOUT_MS fails the\n command (a PIN entry waits as long as it takes), and a STOP next in the\n queue -- as after a flush -- gives up on it (@c OSDP_COMPLETION_FLUSHED).\n\n To abandon a session and the APDUs still queued for it, flush the command\n queue (osdp_cp_flush_commands()) and then submit @c OSDP_TRS_CMD_STOP; the\n flushed APDUs are reported to the app individually. If the session ends on its\n own before its STOP is reached -- the reader rejects transparent mode, say,\n which fails the START, or the link goes down -- the rest of the band, STOP\n included, is completed @c OSDP_COMPLETION_FLUSHED and an\n @c OSDP_TRS_SESSION_FAILED notification says why.\n\n A session with no card command queued or answer pending for\n @c OSDP_TRS_IDLE_TOUT_MS (30 s by default) is taken to be abandoned: the\n library closes it as a STOP would and fails it with\n @c OSDP_TRS_FAIL_IDLE, so a forgotten STOP cannot keep the reader in\n transparent mode, where it stops reporting ordinary card reads.\n\n Knowing @b when to open a band is the reader's job: a smart card entering\n the field is announced as an @c OSDP_EVENT_TRS card-info/card-present event,\n either spontaneously (some readers report cards in their default mode) or\n because a presence scan (osdp_cp_trs_scan_enable()) is briefly holding the\n reader in transparent mode. Either way, react by submitting a START; while\n the scan has the reader in transparent mode the new band adopts it directly,\n with no extra mode negotiation on the wire."]
 pub type osdp_trs_cmd_e = ::core::ffi::c_uchar;
 #[doc = "< Reader is in transparent mode; APDUs flow"]
 pub const osdp_trs_session_status_e_OSDP_TRS_SESSION_OPENED: osdp_trs_session_status_e = 0;
-#[doc = "< STOP honoured; reader restored"]
+#[doc = "< STOP honoured (CP), or the CP took the\n   reader out of transparent mode or\n   restarted the link (PD); reader restored"]
 pub const osdp_trs_session_status_e_OSDP_TRS_SESSION_CLOSED: osdp_trs_session_status_e = 1;
 #[doc = "< PD refused transparent mode, or the\n   session was aborted by a link error"]
 pub const osdp_trs_session_status_e_OSDP_TRS_SESSION_FAILED: osdp_trs_session_status_e = 2;
@@ -662,8 +664,24 @@ pub const osdp_trs_session_status_e_OSDP_TRS_SESSION_FAILED: osdp_trs_session_st
 pub const osdp_trs_session_status_e_OSDP_TRS_SCAN_SUSPENDED: osdp_trs_session_status_e = 3;
 #[doc = " The reader does not implement the mode-01 card scan, so the presence\n scan cannot ask whether a card is still there and falls back to\n whatever the reader volunteers on a poll. Raised at most once per\n connection, and only for readers that refuse the command.\n\n The practical consequence is that **card removal will not be\n reported**: many such readers hold a sighting for the rest of the\n transparent session. An application that needs to know when the card\n left must find out for itself, by sending a card command inside a\n session and treating its failure as the card being gone."]
 pub const osdp_trs_session_status_e_OSDP_TRS_SCAN_NO_DEPARTURE: osdp_trs_session_status_e = 4;
-#[doc = " @brief Life-cycle of a TRS card session, reported in the `trs_status`\n payload of an @c OSDP_NOTIFICATION_TRS_STATUS notification."]
+#[doc = " PD only: the CP ended its transaction with the card (the mode-01\n terminate a STOP sends). Disconnect the card, so that the next\n session finds it as if it had just been presented. The reader stays\n in transparent mode until CLOSED."]
+pub const osdp_trs_session_status_e_OSDP_TRS_CARD_RELEASED: osdp_trs_session_status_e = 5;
+#[doc = " @brief Life-cycle of a TRS card session, reported in the `trs_status`\n payload of an @c OSDP_NOTIFICATION_TRS_STATUS notification.\n\n A PD is told only OPENED, CLOSED and CARD_RELEASED; the rest are the CP's."]
 pub type osdp_trs_session_status_e = ::core::ffi::c_uchar;
+#[doc = "< Not a failure"]
+pub const osdp_trs_fail_reason_e_OSDP_TRS_FAIL_NONE: osdp_trs_fail_reason_e = 0;
+#[doc = "< The reader stayed in its default mode"]
+pub const osdp_trs_fail_reason_e_OSDP_TRS_FAIL_REFUSED: osdp_trs_fail_reason_e = 1;
+#[doc = "< A command of the session was NAKed"]
+pub const osdp_trs_fail_reason_e_OSDP_TRS_FAIL_NAK: osdp_trs_fail_reason_e = 2;
+#[doc = "< A command of the session drew no usable\n   reply"]
+pub const osdp_trs_fail_reason_e_OSDP_TRS_FAIL_NO_REPLY: osdp_trs_fail_reason_e = 3;
+#[doc = "< The PD went offline or was disabled"]
+pub const osdp_trs_fail_reason_e_OSDP_TRS_FAIL_LINK_DOWN: osdp_trs_fail_reason_e = 4;
+#[doc = "< No card command came for the idle timeout"]
+pub const osdp_trs_fail_reason_e_OSDP_TRS_FAIL_IDLE: osdp_trs_fail_reason_e = 5;
+#[doc = " @brief Why a TRS card session failed, reported with\n @c OSDP_TRS_SESSION_FAILED in struct osdp_notification_trs_status::reason."]
+pub type osdp_trs_fail_reason_e = ::core::ffi::c_uchar;
 #[doc = " @brief Cadence of the background card presence scan\n (osdp_cp_trs_scan_enable()). A zero in any field selects that parameter's\n built-in default."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -674,6 +692,8 @@ pub struct osdp_trs_scan_params {
     pub mode1_dwell_ms: u16,
     #[doc = " Once a probe sights a card, transparent mode is held this long\n (default 500 ms) waiting for the app to open a band in response;\n a band submitted within the hold adopts the reader as-is, with no\n extra mode negotiation on the wire."]
     pub hold_ms: u16,
+    #[doc = " Reader the scan asks whether a card is present (0 = first, the\n default). Sightings a reader volunteers are delivered whichever\n reader reports them."]
+    pub reader: u8,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -752,6 +772,8 @@ pub struct osdp_trs_pin_entry__bindgen_ty_2 {
 pub struct osdp_trs_cmd {
     #[doc = "< Which TRS command; selects the union"]
     pub command: osdp_trs_cmd_e,
+    #[doc = " Reader the command addresses (0 = first, 1 = second, up to the PD's\n READERS capability). A band talks to the card in one reader: every\n command from START to STOP must name the reader its START named, and\n STOP releases that reader's card. On a PD, the reader the CP\n addressed."]
+    pub reader: u8,
     pub __bindgen_anon_1: osdp_trs_cmd__bindgen_ty_1,
 }
 #[repr(C)]
@@ -809,7 +831,7 @@ pub struct osdp_trs_card_data {
     #[doc = "< Reader number (0 = first, 1 = second)"]
     pub reader: u8,
     #[doc = "< Result of the APDU exchange as reported by the reader\n   (reader-defined; not standardized by OSDP)"]
-    pub status: u8,
+    pub reader_status: u8,
     #[doc = "< R-APDU returned by the card"]
     pub apdu: osdp_trs_apdu,
 }
@@ -819,14 +841,28 @@ pub struct osdp_trs_pin_complete {
     #[doc = "< Reader number (0 = first, 1 = second)"]
     pub reader: u8,
     #[doc = "< Result of the secure PIN entry sequence as reported by the\n   reader (reader-defined; not standardized by OSDP)"]
-    pub status: u8,
+    pub reader_status: u8,
     #[doc = "< Number of PIN-entry attempts"]
     pub tries: u8,
 }
+#[doc = "< No card in the field"]
+pub const osdp_trs_error_e_OSDP_TRS_ERR_NO_CARD: osdp_trs_error_e = 1;
+#[doc = "< The card did not answer; it may have\n   left the field"]
+pub const osdp_trs_error_e_OSDP_TRS_ERR_CARD_SILENT: osdp_trs_error_e = 2;
+#[doc = "< The C-APDU was too long for the reader, or\n   the R-APDU too long to send back; ask for\n   less, e.g. with a smaller Le"]
+pub const osdp_trs_error_e_OSDP_TRS_ERR_TOO_LONG: osdp_trs_error_e = 3;
+#[doc = "< The exchange with the card failed at the\n   protocol level"]
+pub const osdp_trs_error_e_OSDP_TRS_ERR_PROTOCOL: osdp_trs_error_e = 4;
+#[doc = "< The reader is still working on an earlier\n   command"]
+pub const osdp_trs_error_e_OSDP_TRS_ERR_BUSY: osdp_trs_error_e = 5;
+#[doc = "< The reader does not support the\n   command"]
+pub const osdp_trs_error_e_OSDP_TRS_ERR_UNSUPPORTED: osdp_trs_error_e = 6;
+#[doc = " @brief Recommended codes for a TRS error report (@c struct osdp_trs_error).\n\n OSDP leaves the error byte undefined (\"various transparent mode error\n conditions\"), so every CP would otherwise need each reader vendor's table.\n These are LibOSDP's convention, not the specification's: a reader built on\n LibOSDP should use them, and a CP should still expect other values from\n other readers."]
+pub type osdp_trs_error_e = ::core::ffi::c_uchar;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct osdp_trs_error {
-    #[doc = "< Error/NAK condition from the reader or card\n   (reader-defined; not standardized by OSDP)"]
+    #[doc = "< Error condition from the reader or card; LibOSDP\n   recommends enum osdp_trs_error_e, but a reader may\n   send any value"]
     pub code: u8,
 }
 #[doc = "< A card entered the field (CSN, protocol)"]
@@ -879,6 +915,12 @@ pub struct osdp_notification_pd_status {
 pub struct osdp_notification_trs_status {
     #[doc = "< Session life-cycle state"]
     pub status: osdp_trs_session_status_e,
+    #[doc = " Reader the status concerns: on a CP, the session's reader for\n OPENED/CLOSED/FAILED and the scanned reader for the scan's statuses;\n on a PD, the reader whose card is released for CARD_RELEASED, and 0\n for OPENED/CLOSED, which concern the whole PD."]
+    pub reader: u8,
+    #[doc = " Why the session failed, for FAILED; OSDP_TRS_FAIL_NONE otherwise"]
+    pub reason: osdp_trs_fail_reason_e,
+    #[doc = " The PD's NAK code (enum osdp_pd_nak_code_e), for OSDP_TRS_FAIL_NAK"]
+    pub nak_code: u8,
 }
 #[doc = " @brief LibOSDP notification payload.\n\n Carries a libosdp-synthesized notification to the application. The same\n struct is used in both event (CP) and command (PD) delivery paths. The\n @a type discriminator selects which union member is valid; see\n @ref osdp_notification_type."]
 #[repr(C)]
@@ -1122,7 +1164,7 @@ pub union osdp_event__bindgen_ty_1 {
     #[doc = "< Transparent mode reply event structure"]
     pub trs: osdp_trs_reply,
 }
-#[doc = " @brief Callback for PD command notifications. After it has been registered\n with `osdp_pd_set_command_callback`, this method is invoked when the PD\n receives a command from the CP.\n\n @param arg pointer that will was passed to the arg param of\n `osdp_pd_set_command_callback`.\n @param cmd pointer to the received command.\n\n @retval 0 if LibOSDP must send an `osdp_ACK` response.\n @retval -ve if LibOSDP must send an `osdp_NAK` response.\n @retval +ve is reserved.\n\n @note To select the NAK code, return the negated code; only the codes an\n application can know are honoured:\n   - `-OSDP_PD_NAK_BIO_TYPE` - the requested biometric type is not supported\n   - `-OSDP_PD_NAK_BIO_FMT` - the requested biometric format is not supported\n   - `-OSDP_PD_NAK_RECORD` - the command record could not be processed\n Any other -ve value (such as a plain `-1`) sends `OSDP_PD_NAK_RECORD`. The\n remaining NAK codes describe protocol faults that only LibOSDP can detect;\n returning one of them logs a warning and sends `OSDP_PD_NAK_RECORD`.\n\n @note For commands whose reply carries application data - `OSDP_CMD_MFG`,\n `OSDP_CMD_BIOREAD` and `OSDP_CMD_BIOMATCH` - the app submits the reply as an\n event via `osdp_pd_submit_event()`. Submitting it from within this callback\n sends it as the reply to the command itself; submitting it later sends it as\n a poll response and this command is `osdp_ACK`-ed.\n\n @note `OSDP_CMD_STATUS` is answered the same way: submit an\n `OSDP_EVENT_STATUS` of the queried type from within this callback, which\n also lets `osdp_pd_submit_event()` refuse a report whose entry count does not\n match the PD's capability. An app may instead fill in `cmd->status` before\n returning; that report is sent when no status event was submitted."]
+#[doc = " @brief Callback for PD command notifications. After it has been registered\n with `osdp_pd_set_command_callback`, this method is invoked when the PD\n receives a command from the CP.\n\n @param arg pointer that will was passed to the arg param of\n `osdp_pd_set_command_callback`.\n @param cmd pointer to the received command.\n\n @retval 0 if LibOSDP must send an `osdp_ACK` response.\n @retval -ve if LibOSDP must send an `osdp_NAK` response.\n @retval OSDP_PD_CMD_BUSY if LibOSDP must send an `osdp_BUSY` response.\n @retval Other +ve values are reserved and send an `osdp_NAK` response.\n\n @note An app that cannot act on a command within the CP's reply timeout --\n one that must write a new key to flash before acknowledging a KEYSET, say --\n returns `OSDP_PD_CMD_BUSY`. The CP then repeats the command, unchanged,\n until it gets another answer or its retry budget runs out, and each repeat\n reaches this callback again. So the app starts the work on the first call,\n returns `OSDP_PD_CMD_BUSY` while it runs, and returns 0 or a NAK once it is\n done. A BUSY answer leaves the PD as it was before the command arrived: the\n sequence number does not advance and the secure channel is untouched. A\n reply event belongs with the call that does not return `OSDP_PD_CMD_BUSY`.\n The return value for `OSDP_CMD_COMSET_DONE` is ignored, since the reply to\n COMSET has already gone out by then. GENAUTH and CRAUTH arrive in fragments\n that a repeat cannot reassemble, so BUSY for them is sent as a NAK; reply\n to those on a later poll instead. OUTPUT, LED and BUZZER commands can carry\n several records, each a call of its own; BUSY is honoured only for the\n first, since a repeat would replay the records already applied, and is sent\n as a NAK for any later one.\n\n @note To select the NAK code, return the negated code; only the codes an\n application can know are honoured:\n   - `-OSDP_PD_NAK_BIO_TYPE` - the requested biometric type is not supported\n   - `-OSDP_PD_NAK_BIO_FMT` - the requested biometric format is not supported\n   - `-OSDP_PD_NAK_RECORD` - the command record could not be processed\n Any other -ve value (such as a plain `-1`) sends `OSDP_PD_NAK_RECORD`. The\n remaining NAK codes describe protocol faults that only LibOSDP can detect;\n returning one of them logs a warning and sends `OSDP_PD_NAK_RECORD`.\n\n @note For commands whose reply carries application data - `OSDP_CMD_MFG`,\n `OSDP_CMD_BIOREAD` and `OSDP_CMD_BIOMATCH` - the app submits the reply as an\n event via `osdp_pd_submit_event()`. Submitting it from within this callback\n sends it as the reply to the command itself; submitting it later sends it as\n a poll response and this command is `osdp_ACK`-ed.\n\n @note `OSDP_CMD_STATUS` is answered the same way: submit an\n `OSDP_EVENT_STATUS` of the queried type from within this callback, which\n also lets `osdp_pd_submit_event()` refuse a report whose entry count does not\n match the PD's capability. An app may instead fill in `cmd->status` before\n returning; that report is sent when no status event was submitted."]
 pub type pd_command_callback_t = ::core::option::Option<
     unsafe extern "C" fn(arg: *mut ::core::ffi::c_void, cmd: *mut osdp_cmd) -> ::core::ffi::c_int,
 >;
@@ -1162,11 +1204,11 @@ pub type pd_event_completion_callback_t = ::core::option::Option<
     ),
 >;
 unsafe extern "C" {
-    #[doc = " @brief This method is used to setup a device in PD mode. Application must\n store the returned context pointer and pass it back to all OSDP functions\n intact.\n\n @param channel Pointer to channel ops used for this PD context.\n @param info Pointer to info struct populated by application.\n\n @retval OSDP Context on success\n @retval NULL on errors"]
+    #[doc = " @brief This method is used to setup a device in PD mode. Application must\n store the returned context pointer and pass it back to all OSDP functions\n intact.\n\n The first context setup initialises crypto state shared by every context,\n so contexts must not be set up from several threads at once.\n\n @param channel Pointer to channel ops used for this PD context.\n @param info Pointer to info struct populated by application.\n\n @retval OSDP Context on success\n @retval NULL on errors"]
     pub fn osdp_pd_setup(channel: *mut osdp_channel, info: *const osdp_pd_info_t) -> *mut osdp_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context\n\n @note LibOSDP is not internally synchronized. All API calls against one\n context -- submissions, flushes, teardown, and this refresh -- must be\n serialized by the caller: either make every call from one thread, or hold\n one lock across every call (the bundled python binding does the latter).\n The submit APIs enqueue into unlocked intrusive lists that this call\n consumes; concurrent unserialized access corrupts them. The read-only\n getters are exempt: osdp_get_status_mask(), osdp_get_sc_status_mask(),\n osdp_cp_get_pd_id() and osdp_get_file_tx_status() mutate nothing and may be\n called concurrently -- see their notes.\n\n @note LibOSDP runs the application's callbacks -- channel, file ops,\n command, event, completion and log -- from inside osdp_cp_refresh(),\n osdp_pd_refresh(), the flush calls, teardown, and osdp_cp_submit_command()\n (which opens the file of an OSDP_CMD_FILE_TX it starts). From inside a\n callback, an application may submit, flush, cancel and query the context the\n callback belongs to. LibOSDP refuses the calls that would pull the context\n out from under the code that ran the callback: a nested refresh returns\n without doing anything, and osdp_file_register_ops() and osdp_cp_add_pd()\n fail. While teardown runs, the submit, flush and cancel calls and those two\n fail too, and a refresh does nothing. osdp_cp_teardown() and\n osdp_pd_teardown() must not be called from inside a callback of the context\n they tear down -- they free it under the code that ran the callback -- except\n from a completion that teardown itself fired, where the call does nothing."]
+    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context\n\n @note LibOSDP is not internally synchronized. All API calls against one\n context -- submissions, flushes, teardown, and this refresh -- must be\n serialized by the caller: either make every call from one thread, or hold\n one lock across every call (the bundled python binding does the latter).\n The submit APIs enqueue into unlocked intrusive lists that this call\n consumes; concurrent unserialized access corrupts them. The rule covers the\n read-only getters too, such as osdp_get_status_mask(): they read per-PD\n state that this call writes, with no atomic access.\n\n @note LibOSDP runs the application's callbacks -- channel, file ops,\n command, event, completion and log -- from inside osdp_cp_refresh(),\n osdp_pd_refresh(), the flush calls, teardown, and osdp_cp_submit_command()\n (which opens the file of an OSDP_CMD_FILE_TX it starts). From inside a\n callback, an application may submit, flush, cancel and query the context the\n callback belongs to. LibOSDP refuses the calls that would pull the context\n out from under the code that ran the callback: a nested refresh returns\n without doing anything, and osdp_file_register_ops() and osdp_cp_add_pd()\n fail. While teardown runs, the submit, flush and cancel calls and those two\n fail too, and a refresh does nothing. osdp_cp_teardown() and\n osdp_pd_teardown() must not be called from inside a callback of the context\n they tear down -- they free it under the code that ran the callback -- except\n from a completion that teardown itself fired, where the call does nothing."]
     pub fn osdp_pd_refresh(ctx: *mut osdp_t);
 }
 unsafe extern "C" {
@@ -1197,15 +1239,19 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Submit PD events to CP. These events are delivered to the CP as a\n response to a future POLL command. A successful return does not mean CP\n received it, it only means LibOSDP accepted this submission.\n\n @param ctx OSDP context\n @param event pointer to event struct. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note An accepted event is queued @b by @b reference; LibOSDP does not copy\n it. @a event must stay alive and unmodified from a successful submission until\n the library is done with it -- an event that lives on the stack of a function\n that returns (a command callback, say), or one reused for a second submission\n while the first is still queued, corrupts the queue. Ownership returns to the\n application when the event completion callback fires for that pointer (see\n osdp_pd_set_event_completion_callback()); every accepted event is reported\n exactly once, including those dropped by osdp_pd_flush_events()\n (@c OSDP_COMPLETION_FLUSHED) and osdp_pd_teardown() (@c OSDP_COMPLETION_ABORTED).\n That callback is where a heap-allocated event should be freed. On a -1 return\n the event was never queued and is the application's to reuse at once.\n\n @note Submission fails unless a completion callback is registered (see\n osdp_pd_set_event_completion_callback()) -- the completion callback is how\n ownership of the submitted event returns to the application.\n\n @note A card read in any format other than @c OSDP_CARD_FMT_RAW_UNSPECIFIED\n or @c OSDP_CARD_FMT_RAW_WIEGAND is rejected; LibOSDP does not support\n osdp_FMT."]
+    #[doc = " @brief Submit PD events to CP. These events are delivered to the CP as a\n response to a future POLL command. A successful return does not mean CP\n received it, it only means LibOSDP accepted this submission.\n\n @param ctx OSDP context\n @param event pointer to event struct. Must be filled by application.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note An accepted event is queued @b by @b reference; LibOSDP does not copy\n it. @a event must stay alive and unmodified from a successful submission until\n the library is done with it -- an event that lives on the stack of a function\n that returns (a command callback, say), or one reused for a second submission\n while the first is still queued, corrupts the queue. Ownership returns to the\n application when the event completion callback fires for that pointer (see\n osdp_pd_set_event_completion_callback()); every accepted event is reported\n exactly once, including those dropped by osdp_pd_flush_events()\n (@c OSDP_COMPLETION_FLUSHED) and osdp_pd_teardown() (@c OSDP_COMPLETION_ABORTED).\n That callback is where a heap-allocated event should be freed. On a -1 return\n the event was never queued and is the application's to reuse at once.\n\n @note Submission fails unless a completion callback is registered (see\n osdp_pd_set_event_completion_callback()) -- the completion callback is how\n ownership of the submitted event returns to the application.\n\n @note A card read in any format other than @c OSDP_CARD_FMT_RAW_UNSPECIFIED\n or @c OSDP_CARD_FMT_RAW_WIEGAND is rejected; LibOSDP does not support\n osdp_FMT.\n\n @note A TRS card-data reply whose R-APDU is longer than\n osdp_pd_trs_get_max_apdu_len() is rejected: the CP could not receive it."]
     pub fn osdp_pd_submit_event(ctx: *mut osdp_t, event: *const osdp_event) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the longest R-APDU this PD can send the CP in one TRS card-data\n reply.\n\n The reply has to fit the smaller of this build's @c OSDP_PACKET_BUF_SIZE and\n the receive buffer the CP announced with osdp_ACURXSIZE, less the framing the\n R-APDU travels inside. That is often well short of a full 256-byte short\n APDU answer, so a reader should bound what it takes from the card by this,\n and answer a longer one with a TRS error report of its own.\n\n A CP that never sends osdp_ACURXSIZE (LibOSDP's own sends it once online) is\n assumed to take packets as large as this build's, so a PD with a larger\n buffer than such a CP can still send a reply the CP drops.\n\n The value can change when the CP announces its receive size, so ask again\n for each answer rather than caching it.\n\n @param ctx OSDP context\n\n @retval >0 Maximum R-APDU length in bytes\n @retval -1 on failure (bad args)"]
+    pub fn osdp_pd_trs_get_max_apdu_len(ctx: *const osdp_t) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Deletes all events from the PD's event queue.\n\n @param ctx OSDP context\n @return int Count of events dequeued."]
     pub fn osdp_pd_flush_events(ctx: *mut osdp_t) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief This method is used to setup a device in CP mode. Application must\n store the returned context pointer and pass it back to all OSDP functions\n intact.\n\n @param channel Pointer to shared channel ops used for this CP context.\n @param num_pd Number of PDs connected to this CP. The `osdp_pd_info_t *` is\n treated as an array of length num_pd.\n @param info Pointer to info struct populated by application.\n\n @retval OSDP Context on success\n @retval NULL on errors"]
+    #[doc = " @brief This method is used to setup a device in CP mode. Application must\n store the returned context pointer and pass it back to all OSDP functions\n intact.\n\n The first context setup initialises crypto state shared by every context,\n so contexts must not be set up from several threads at once.\n\n @param channel Pointer to shared channel ops used for this CP context.\n @param num_pd Number of PDs connected to this CP. The `osdp_pd_info_t *` is\n treated as an array of length num_pd.\n @param info Pointer to info struct populated by application.\n\n @retval OSDP Context on success\n @retval NULL on errors"]
     pub fn osdp_cp_setup(
         channel: *const osdp_channel,
         num_pd: ::core::ffi::c_int,
@@ -1221,7 +1267,7 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context\n\n @note LibOSDP is not internally synchronized. All API calls against one\n context -- submissions, flushes, teardown, and this refresh -- must be\n serialized by the caller: either make every call from one thread, or hold\n one lock across every call (the bundled python binding does the latter).\n The submit APIs enqueue into unlocked intrusive lists that this call\n consumes; concurrent unserialized access corrupts them. The read-only\n getters are exempt: osdp_get_status_mask(), osdp_get_sc_status_mask(),\n osdp_cp_get_pd_id() and osdp_get_file_tx_status() mutate nothing and may be\n called concurrently -- see their notes.\n\n @note LibOSDP runs the application's callbacks -- channel, file ops,\n command, event, completion and log -- from inside osdp_cp_refresh(),\n osdp_pd_refresh(), the flush calls, teardown, and osdp_cp_submit_command()\n (which opens the file of an OSDP_CMD_FILE_TX it starts). From inside a\n callback, an application may submit, flush, cancel and query the context the\n callback belongs to. LibOSDP refuses the calls that would pull the context\n out from under the code that ran the callback: a nested refresh returns\n without doing anything, and osdp_file_register_ops() and osdp_cp_add_pd()\n fail. While teardown runs, the submit, flush and cancel calls and those two\n fail too, and a refresh does nothing. osdp_cp_teardown() and\n osdp_pd_teardown() must not be called from inside a callback of the context\n they tear down -- they free it under the code that ran the callback -- except\n from a completion that teardown itself fired, where the call does nothing."]
+    #[doc = " @brief Periodic refresh method. Must be called by the application at least\n once every 50ms to meet OSDP timing requirements.\n\n @param ctx OSDP context\n\n @note LibOSDP is not internally synchronized. All API calls against one\n context -- submissions, flushes, teardown, and this refresh -- must be\n serialized by the caller: either make every call from one thread, or hold\n one lock across every call (the bundled python binding does the latter).\n The submit APIs enqueue into unlocked intrusive lists that this call\n consumes; concurrent unserialized access corrupts them. The rule covers the\n read-only getters too, such as osdp_get_status_mask(): they read per-PD\n state that this call writes, with no atomic access.\n\n @note LibOSDP runs the application's callbacks -- channel, file ops,\n command, event, completion and log -- from inside osdp_cp_refresh(),\n osdp_pd_refresh(), the flush calls, teardown, and osdp_cp_submit_command()\n (which opens the file of an OSDP_CMD_FILE_TX it starts). From inside a\n callback, an application may submit, flush, cancel and query the context the\n callback belongs to. LibOSDP refuses the calls that would pull the context\n out from under the code that ran the callback: a nested refresh returns\n without doing anything, and osdp_file_register_ops() and osdp_cp_add_pd()\n fail. While teardown runs, the submit, flush and cancel calls and those two\n fail too, and a refresh does nothing. osdp_cp_teardown() and\n osdp_pd_teardown() must not be called from inside a callback of the context\n they tear down -- they free it under the code that ran the callback -- except\n from a completion that teardown itself fired, where the call does nothing."]
     pub fn osdp_cp_refresh(ctx: *mut osdp_t);
 }
 unsafe extern "C" {
@@ -1249,7 +1295,7 @@ unsafe extern "C" {
     pub fn osdp_cp_flush_commands(ctx: *mut osdp_t, pd: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Enable a background card presence scan on a TRS-capable PD, for\n readers that do not announce smart cards while in their default mode.\n\n While enabled and no card session (band) is open, the library time-slices\n the reader: it stays in the default mode for @a mode0_dwell_ms (ordinary\n credential reads keep working), then holds transparent mode for\n @a mode1_dwell_ms watching for a card sighting, and repeats. A sighting is\n delivered as an @c OSDP_EVENT_TRS event and transparent mode is held for\n @a hold_ms so the band the app opens in response adopts the reader without\n renegotiating the mode. See @ref osdp_trs_scan_params.\n\n The scan pauses by itself while a band or file transfer is in progress and\n resumes after. If the reader refuses a probe, an\n @c OSDP_TRS_SCAN_SUSPENDED notification is raised and probing continues\n with exponential backoff, so a reader that is only transiently unwilling\n recovers on its own; call osdp_cp_trs_scan_disable() to stop entirely.\n\n Readers that announce cards spontaneously in their default mode do not\n need this: their sightings are forwarded as @c OSDP_EVENT_TRS events as-is.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param params Scan cadence; NULL (or zero fields) selects the defaults\n\n @retval 0 on success\n @retval -1 on failure (TRS support not compiled in, or bad args)"]
+    #[doc = " @brief Enable a background card presence scan on a TRS-capable PD, for\n readers that do not announce smart cards while in their default mode.\n\n While enabled and no card session (band) is open, the library time-slices\n the reader: it stays in the default mode for @a mode0_dwell_ms (ordinary\n credential reads keep working), then holds transparent mode for\n @a mode1_dwell_ms watching for a card sighting, and repeats. A sighting is\n delivered as an @c OSDP_EVENT_TRS event and transparent mode is held for\n @a hold_ms so the band the app opens in response adopts the reader without\n renegotiating the mode. See @ref osdp_trs_scan_params.\n\n The scan pauses by itself while a band or file transfer is in progress and\n resumes after. If the reader refuses a probe, an\n @c OSDP_TRS_SCAN_SUSPENDED notification is raised and probing continues\n with exponential backoff, so a reader that is only transiently unwilling\n recovers on its own; call osdp_cp_trs_scan_disable() to stop entirely.\n\n Readers that announce cards spontaneously in their default mode do not\n need this: their sightings are forwarded as @c OSDP_EVENT_TRS events as-is.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param params Scan cadence; NULL (or zero fields) selects the defaults\n\n @retval 0 on success\n @retval -1 on failure (bad args)"]
     pub fn osdp_cp_trs_scan_enable(
         ctx: *mut osdp_t,
         pd: ::core::ffi::c_int,
@@ -1257,19 +1303,19 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Disable the background card presence scan on a PD. If a probe is\n in flight, the reader returns to its default mode on the next refresh.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n\n @retval 0 on success\n @retval -1 on failure (TRS support not compiled in, or bad args)"]
+    #[doc = " @brief Disable the background card presence scan on a PD. If a probe is\n in flight, the reader returns to its default mode on the next refresh.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n\n @retval 0 on success\n @retval -1 on failure (bad args)"]
     pub fn osdp_cp_trs_scan_disable(ctx: *mut osdp_t, pd: ::core::ffi::c_int)
     -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Get the largest C-APDU that can be sent to a PD in a single\n @c OSDP_TRS_CMD_SEND_APDU.\n\n This is **not** @c OSDP_TRS_APDU_MAX_LEN. That constant only sizes the\n buffer in @a struct osdp_trs_apdu; what actually fits on the wire is bounded\n by the packet size in use, which is the smaller of this build's\n @c OSDP_PACKET_BUF_SIZE and the receive buffer the PD advertised, less the\n framing the APDU travels inside. With the default packet size the limit is\n appreciably lower than @c OSDP_TRS_APDU_MAX_LEN, so an application that sizes\n its payloads against that constant will have commands rejected.\n\n The value is only final once the PD has been online at least once: the PD's\n receive-buffer capability is not known before then, and this returns the\n build's own limit until it is.\n\n An @c OSDP_TRS_CMD_ENTER_PIN carries its APDU behind a fixed parameter\n block, so its APDU has correspondingly less room than this.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n\n @retval >0 Maximum C-APDU length in bytes\n @retval -1 on failure (TRS support not compiled in, or bad args)"]
+    #[doc = " @brief Get the largest C-APDU that can be sent to a PD in a single\n @c OSDP_TRS_CMD_SEND_APDU.\n\n This is **not** @c OSDP_TRS_APDU_MAX_LEN. That constant only sizes the\n buffer in @a struct osdp_trs_apdu; what actually fits on the wire is bounded\n by the packet size in use, which is the smaller of this build's\n @c OSDP_PACKET_BUF_SIZE and the receive buffer the PD advertised, less the\n framing the APDU travels inside. With the default packet size the limit is\n appreciably lower than @c OSDP_TRS_APDU_MAX_LEN, so an application that sizes\n its payloads against that constant will have commands rejected.\n\n The value is only final once the PD has been online at least once: the PD's\n receive-buffer capability is not known before then, and this returns the\n build's own limit until it is.\n\n An @c OSDP_TRS_CMD_ENTER_PIN carries its APDU behind a fixed parameter\n block, so its APDU has correspondingly less room than this.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n\n @retval >0 Maximum C-APDU length in bytes\n @retval -1 on failure (bad args)"]
     pub fn osdp_cp_trs_get_max_apdu_len(
         ctx: *const osdp_t,
         pd: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Get PD ID information as reported by the PD. Calling this method\n before the CP has had a the chance to get this information will return\n invalid/stale results.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param id A pointer to struct osdp_pd_id that will be filled with the\n PD ID information that the PD last returned.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note This copies out of the PD's record and mutates nothing, so it is\n exempt from the serialization rule documented on osdp_cp_refresh(). The\n record is filled while the PD comes online and re-read on every reconnect,\n so it changes if a different device starts answering this address; reading\n it before the first read is already documented above as not meaningful.\n @ref OSDP_NOTIFICATION_PD_ID reports such a change as it happens."]
+    #[doc = " @brief Get PD ID information as reported by the PD. Calling this method\n before the CP has had a the chance to get this information will return\n invalid/stale results.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param id A pointer to struct osdp_pd_id that will be filled with the\n PD ID information that the PD last returned.\n\n @retval 0 on success\n @retval -1 on failure\n\n @note The record is filled while the PD comes online and re-read on every\n reconnect, so it changes if a different device starts answering this\n address; reading it before the first read is already documented above as\n not meaningful.\n @ref OSDP_NOTIFICATION_PD_ID reports such a change as it happens."]
     pub fn osdp_cp_get_pd_id(
         ctx: *const osdp_t,
         pd: ::core::ffi::c_int,
@@ -1320,6 +1366,14 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Check if a PD is currently enabled.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n\n @retval true if PD is enabled\n @retval false if PD is disabled or on error"]
     pub fn osdp_cp_is_pd_enabled(ctx: *const osdp_t, pd: ::core::ffi::c_int) -> bool;
+}
+unsafe extern "C" {
+    #[doc = " @brief Replace the SCBK a disabled PD comes up on when it is enabled again.\n\n For a CP that must try one key and then another, such as at start-up after\n a key rotation that never settled: disable the PD, wait for\n osdp_cp_is_pd_enabled() to return false, set the key and enable the PD.\n\n @param ctx OSDP context\n @param pd PD offset (0-indexed) of this PD in `osdp_pd_info_t *` passed to\n osdp_cp_setup()\n @param scbk The 16-byte key. SCBK-D and an all-zero key are refused.\n\n @retval 0 on success\n @retval -1 on failure: the PD is not disabled or is being enabled, it was\n set up without an SCBK, a KEYSET for it has not completed, or the key is\n refused."]
+    pub fn osdp_cp_set_scbk(
+        ctx: *mut osdp_t,
+        pd: ::core::ffi::c_int,
+        scbk: *const u8,
+    ) -> ::core::ffi::c_int;
 }
 #[doc = "< Log level Emergency"]
 pub const osdp_log_level_e_OSDP_LOG_EMERG: osdp_log_level_e = 0;
@@ -1397,11 +1451,11 @@ unsafe extern "C" {
     pub fn osdp_get_abi_info(info: *mut osdp_abi_info);
 }
 unsafe extern "C" {
-    #[doc = " @brief Get a bit mask of number of PD that are online currently.\n\n @param ctx OSDP context\n @param bitmask pointer to an array of bytes. must be as large as\n (num_pds + 7 / 8).\n\n @note Unlike the rest of the API, this samples per-PD state and writes only\n to @a bitmask; it mutates nothing. It is therefore exempt from the\n serialization rule documented on osdp_cp_refresh(): it may be called\n concurrently with the refresh loop, and the answer is at worst one refresh\n out of date."]
+    #[doc = " @brief Get a bit mask of number of PD that are online currently.\n\n @param ctx OSDP context\n @param bitmask pointer to an array of bytes. must be as large as\n (num_pds + 7 / 8)."]
     pub fn osdp_get_status_mask(ctx: *const osdp_t, bitmask: *mut u8);
 }
 unsafe extern "C" {
-    #[doc = " @brief Get a bit mask of number of PD that are online and have an active\n secure channel currently.\n\n @param ctx OSDP context\n @param bitmask pointer to an array of bytes. must be as large as\n (num_pds + 7 / 8).\n\n @note Like osdp_get_status_mask(), this mutates nothing and may be called\n concurrently with the refresh loop."]
+    #[doc = " @brief Get a bit mask of number of PD that are online and have an active\n secure channel currently.\n\n @param ctx OSDP context\n @param bitmask pointer to an array of bytes. must be as large as\n (num_pds + 7 / 8)."]
     pub fn osdp_get_sc_status_mask(ctx: *const osdp_t, bitmask: *mut u8);
 }
 #[doc = " @brief Link/protocol health counters accumulated since the last\n @ref osdp_get_metrics() call.\n\n All counters saturate at their maximum value (no wraparound) and\n are reset to zero atomically when @ref osdp_get_metrics() returns\n a snapshot, giving callers interval-delta semantics without\n requiring subtraction."]
@@ -1497,7 +1551,7 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Query file transfer status if one is in progress. Calling this method\n when there is no file transfer progressing will return error.\n\n @param ctx OSDP context\n @param pd PD number in case of CP. This param is ignored in PD mode\n @param size Total size of the file (as obtained from file_ops->open())\n @param offset Offset into the file that has been sent/received (CP/PD)\n @retval 0 on success. -1 on errors.\n\n @note This samples the transfer's counters and mutates nothing, so it is\n exempt from the serialization rule documented on osdp_cp_refresh(). The\n values are a snapshot the transfer has likely moved past by the time they\n are used, which is what a progress reading is."]
+    #[doc = " @brief Query file transfer status if one is in progress. Calling this method\n when there is no file transfer progressing will return error.\n\n @param ctx OSDP context\n @param pd PD number in case of CP. This param is ignored in PD mode\n @param size Total size of the file (as obtained from file_ops->open())\n @param offset Offset into the file that has been sent/received (CP/PD)\n @retval 0 on success. -1 on errors.\n\n @note The values are a snapshot the transfer has likely moved past by the\n time they are used, which is what a progress reading is."]
     pub fn osdp_get_file_tx_status(
         ctx: *const osdp_t,
         pd: ::core::ffi::c_int,

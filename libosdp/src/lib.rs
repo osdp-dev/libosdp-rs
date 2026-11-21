@@ -69,9 +69,6 @@
 //!     with `run`, on any local executor. Wakers run only after the call
 //!     that queued or completed something returns, never inside a
 //!     LibOSDP callback.
-//!   - `trs`: build LibOSDP's transparent reader support, which
-//!     [`Command::Trs`] and [`Event::Trs`] need. Without it, LibOSDP refuses
-//!     those commands with [`Error::Rejected`].
 //!
 //! [1]: https://doc.osdp.dev/protocol/
 //! [2]: https://www.securityindustry.org/industry-standards/open-supervised-device-protocol/

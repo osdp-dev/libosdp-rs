@@ -9,9 +9,8 @@ Release subject ## TODO
 ## Enhancements
 
 - ## TODO
-- build: Add an opt-in trs feature that builds LibOSDP's Transparent
-  Reader Support (OPT_BUILD_OSDP_TRS). Without it, LibOSDP refuses
-  transparent reader commands and the presence scan
+- build: Build LibOSDP's Transparent Reader Support, which LibOSDP now
+  builds unconditionally
 
 ## Fixes
 
@@ -22,6 +21,82 @@ Release subject ## TODO
 
 ## Changes
 
+- 4fc3132 cp: Name a capability code outside the table UNKNOWN
+- d7769cb Drop strrchr() and strncpy() from the core
+- bfe5618 Require heap hooks from unknown bare-metal targets
+- ddf61a1 Keep bare-metal asserts and BUG() off stdio
+- c4561dc pd: Refuse a CHLNG for an SCBK the PD was never given
+- 0849955 cp: Bound command data lengths at submit and build
+- 017c735 pd: Bound event data lengths at submit and build
+- 60f0dac sc: Refuse negative and empty decrypt lengths
+- 35318f6 phy: Bound the security block length to the frame
+- 9da7373 scripts: Keep a release open until its tag exists
+- 36f108a ci: Build and test under ASan and TSan
+- 33d3099 tests: Serialize test-thread access with refresh
+- edf881b tests: Prune pytest to binding coverage
+- 3d48dc4 tests: Fix and dedupe the file, PIV, bio and multipart suites
+- b1452de tests: Run refresh on pthreads and fail unclean suites
+- a5cf10f tests: Replace async_fuzz with link lifecycle cases
+- 487a4bb tests: Seed randomness once and apply globs per suite
+- 47cf313 tests: Pin the refused-handshake fallback both ways
+- e784cf9 tests: Drop duplicate SC, phy and flow cases
+- b4268e7 tests: Cover the PD's submit and NAK checks in C
+- e4c1405 tests: Make vacuous phy, guard and handshake cases bite
+- 9f61bd3 tests: Drop TRS cases other suites already cover
+- 8ac959c tests: Give every TRS case its own devices and real checks
+- 752382b tests: Name the cp_fsm cases and classify TRS failures
+- 0353f8a ci: Run each unit-test suite once, in parallel
+- 9b41681 tests: Poll every 10ms and shorten the retry wait
+- 7220b4a osdp: Serialize the read-only getters with refresh
+- 60e6bb2 cp: Start over in plaintext after a refused handshake
+- 9e5c97c python: Check a wait's condition before sleeping
+- 6ce2d15 file: Keep internal transfer flags away from the app
+- e6adf43 osdp: Map reader status entries to their reader numbers
+- 1904cb7 trs: Recommend a vocabulary for reader error codes
+- 4b5b9e8 trs: Close a session left idle
+- 774dfef trs: Say why a session failed
+- 9fa2339 trs: Complete START and STOP on the session's outcome
+- 459ec59 cp: Hold a card command its reply did not answer
+- a867db9 dotnet: Expose Transparent Reader Support
+- 2607daf python: Ship a serial channel
+- ea7cb02 python: Add a card session helper for TRS
+- 18c91c7 python: Expose the PD's APDU limit, SCBK replacement and log routing
+- 720e8a5 osdp.hpp: Wrap the TRS, SCBK and ABI calls
+- bf32956 trs: Let a build override the card-info size limits
+- 905223c trs: Address card sessions to any reader the PD has
+- cb71f46 README: List TRS and recent features among the salient ones
+- ca49c47 doc: Walk through Transparent Reader Support end to end
+- 7670583 trs: Build Transparent Reader Support unconditionally
+- cb6c2d8 common: Null-check command name before dereferencing it
+- 3654c63 osdp: Give the PD context its own static feature slot
+- 448bf74 cp: Let the app replace a disabled PD's SCBK
+- 79ce397 trs: Report a card leaving after the reader announced it
+- 781f54e cp: Tell the PD our receive size with osdp_ACURXSIZE
+- efdafab pd: Refuse an ACU receive size too small to reply in
+- 9995310 pd: Refuse TRS answers too long to send
+- 5c67457 doc: Describe SCBK rotation and how each side stores keys
+- a66ce1c cp: Stage a new SCBK and drop it only on proof
+- b8c2e8a cp: Restart SC on a reply the secure channel rejects
+- 6955b3b pd: Stage a new SCBK until a session proves it
+- fc695e4 sc: Refuse SCBK-D and all-zero keys as real keys
+- 83bde74 cp: Verify RMAC_I before turning the secure channel on
+- 760a4f5 phy: Bind handshake SCS types to their handshake message
+- 190341d pd: Let the app answer a command with osdp_BUSY
+- 175231a trs: Guarantee the card answer precedes XWR completion
+- 4508129 trs: Rename reader-defined reply status to reader_status
+- 5d5d067 pd: NAK XWR when smart-card support is unadvertised
+- 394d086 python: Bind Transparent Reader Support
+- 5ae785a cp: Hold a TRS band until a deferred card answer arrives
+- 0a4d288 trs: Tell the PD app when the CP changes the reader's mode
+- 64f0ba9 notification: Add a sentinel value
+- c2b8be1 configure: Pass --crypto-ld-flags to the linker verbatim
+- 26dcf34 cmake: Export MbedTLS includes and libraries like OpenSSL
+- 7546b0d crypto: Abort on MbedTLS failures instead of asserting
+- de7ec00 sc: Notify the app when the phy ends a secure channel
+- 1997cb6 crypto: Keep no shared AES state in the MbedTLS backend
+- 1a58bc7 crypto: Add a PSA Crypto API backend for Zephyr
+- c8ac64b utils: Take IS_ENABLED() from Zephyr when building for it
+- 54a223a doc: Add the doc.osdp.dev content tree
 - 0dbf5b8 Update author email to sidcha@osdp.dev
 - 7894df2 file: Abort the transfer when the PD cannot store a chunk
 - 8e29229 file: Keep the PD online when it aborts a transfer

@@ -162,18 +162,13 @@ fn main() -> Result<()> {
         "vendor/src/osdp_multipart.c",
         "vendor/src/osdp_piv.c",
         "vendor/src/osdp_bio.c",
+        "vendor/src/osdp_trs.c",
         "vendor/src/crypto/tinyaes_src.c",
         "vendor/src/crypto/tinyaes.c",
     ];
 
     for file in source_files {
         build = build.file(file);
-    }
-
-    if cfg!(feature = "trs") {
-        build = build
-            .define("OPT_BUILD_OSDP_TRS", "1")
-            .file("vendor/src/osdp_trs.c");
     }
 
     if cfg!(feature = "skip_mark_byte") {

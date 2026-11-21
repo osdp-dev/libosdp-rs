@@ -143,11 +143,9 @@ Release subject ## TODO
 - trs: Talk to the smart card in a PD's reader through transparent
   reader card sessions: Command::Trs carries a TrsCommand (Start, Stop,
   Apdu, EnterPin, CardScan) and Event::Trs a TrsReply (CardInfo,
-  CardPresent, CardData, PinComplete, Error). LibOSDP builds this only
-  with the new trs feature, which turns on libosdp-sys's; without it,
-  these commands are refused with Error::Rejected
+  CardPresent, CardData, PinComplete, Error)
 - trs: Scan a PD's reader for smart cards in the background with
-  ControlPanel::trs_scan_enable, at a TrsScan cadence, and
+  ControlPanel::trs_scan_enable, at a TrsScan cadence and reader, and
   trs_scan_disable; max_apdu_len says how large a C-APDU the link
   carries
 - pd: Responder::reply refuses a status with the wrong number of entries

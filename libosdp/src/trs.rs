@@ -5,7 +5,7 @@
 
 //! Transparent Reader Support (TRS) lets a CP talk to a smart card through a
 //! PD's reader: it opens a card session, sends the card APDUs, and closes
-//! the session. LibOSDP builds it only with the `trs` feature.
+//! the session.
 
 use crate::commands::{from_count, to_count, SECOND};
 use crate::{copy_into, Error};
@@ -434,7 +434,7 @@ impl TryFrom<libosdp_sys::osdp_trs_reply> for TrsReply {
                 let data = unsafe { payload.card_data };
                 Ok(TrsReply::CardData(CardData {
                     reader: data.reader,
-                    status: data.status,
+                    status: data.reader_status,
                     apdu: from_apdu(&data.apdu)?,
                 }))
             }
@@ -442,7 +442,7 @@ impl TryFrom<libosdp_sys::osdp_trs_reply> for TrsReply {
                 let pin = unsafe { payload.pin_complete };
                 Ok(TrsReply::PinComplete(PinResult {
                     reader: pin.reader,
-                    status: pin.status,
+                    status: pin.reader_status,
                     tries: pin.tries,
                 }))
             }
@@ -507,7 +507,7 @@ impl TryFrom<TrsReply> for libosdp_sys::osdp_trs_reply {
             TrsReply::CardData(data) => {
                 raw.__bindgen_anon_1.card_data = libosdp_sys::osdp_trs_card_data {
                     reader: data.reader,
-                    status: data.status,
+                    reader_status: data.status,
                     apdu: to_apdu(&data.apdu)?,
                 };
                 libosdp_sys::osdp_trs_reply_e_OSDP_TRS_REPLY_CARD_DATA
@@ -515,7 +515,7 @@ impl TryFrom<TrsReply> for libosdp_sys::osdp_trs_reply {
             TrsReply::PinComplete(pin) => {
                 raw.__bindgen_anon_1.pin_complete = libosdp_sys::osdp_trs_pin_complete {
                     reader: pin.reader,
-                    status: pin.status,
+                    reader_status: pin.status,
                     tries: pin.tries,
                 };
                 libosdp_sys::osdp_trs_reply_e_OSDP_TRS_REPLY_PIN_COMPLETE
@@ -547,6 +547,10 @@ pub struct TrsScan {
     /// How long transparent mode is held after a card is seen, for the
     /// application to open a session; 500 ms by default.
     pub hold: Duration,
+    /// Reader the scan asks whether a card is present: 0, the default, is
+    /// the first. A sighting a reader volunteers is reported whichever
+    /// reader it comes from.
+    pub reader: u8,
 }
 
 impl TryFrom<TrsScan> for libosdp_sys::osdp_trs_scan_params {
@@ -557,6 +561,7 @@ impl TryFrom<TrsScan> for libosdp_sys::osdp_trs_scan_params {
             mode0_dwell_ms: to_count(value.mode0_dwell, MILLISECOND, "scan mode 0 dwell time")?,
             mode1_dwell_ms: to_count(value.mode1_dwell, MILLISECOND, "scan mode 1 dwell time")?,
             hold_ms: to_count(value.hold, MILLISECOND, "scan hold time")?,
+            reader: value.reader,
         })
     }
 }

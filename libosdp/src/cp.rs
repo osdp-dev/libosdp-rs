@@ -446,13 +446,12 @@ impl ControlPanel {
         }
     }
 
-    /// Stop talking to `pd`: on the next refresh, LibOSDP brings it to a
-    /// safe state and stops polling it, so it goes offline and refuses
-    /// commands until [`enable`](Self::enable)d again. A
-    /// [`submit`](Self::submit) before that refresh is still accepted.
-    /// The command in flight then fails with
-    /// [`CompletionError::Failed`](crate::CompletionError), and a file
-    /// transfer is aborted; commands queued behind it stay pending
+    /// Stop talking to `pd`: LibOSDP first finishes the exchange it has
+    /// under way with `pd`, which may be the next queued command, then
+    /// brings the PD to a safe state and stops polling it, so it goes
+    /// offline and refuses commands until [`enable`](Self::enable)d
+    /// again. A [`submit`](Self::submit) before that is still accepted.
+    /// A file transfer is aborted; commands still queued stay pending
     /// until the PD is enabled and they are sent, or
     /// [`flush`](Self::flush) drops them. Refused with
     /// [`Error::Rejected`] when `pd` is disabled already.
@@ -498,8 +497,6 @@ impl ControlPanel {
     /// a reader that refuses a probe raises
     /// [`TrsSessionStatus::ScanSuspended`](crate::TrsSessionStatus) and is
     /// probed again later, backing off.
-    ///
-    /// Refused with [`Error::Rejected`] without the `trs` feature.
     pub fn trs_scan_enable(&self, pd: PdIndex, scan: TrsScan) -> Result<()> {
         let params = libosdp_sys::osdp_trs_scan_params::try_from(scan)?;
         let rc = unsafe { libosdp_sys::osdp_cp_trs_scan_enable(self.ctx, pd.as_c(), &params) };
@@ -511,8 +508,7 @@ impl ControlPanel {
     }
 
     /// Stop the presence scan on `pd`; its reader is returned to its
-    /// default mode on the next refresh. Refused with [`Error::Rejected`]
-    /// without the `trs` feature.
+    /// default mode on the next refresh.
     pub fn trs_scan_disable(&self, pd: PdIndex) -> Result<()> {
         let rc = unsafe { libosdp_sys::osdp_cp_trs_scan_disable(self.ctx, pd.as_c()) };
         if rc < 0 {
@@ -524,7 +520,7 @@ impl ControlPanel {
 
     /// The largest C-APDU that fits a [`TrsCommand::Apdu`](crate::TrsCommand)
     /// to `pd`, which the packet size in use on the link bounds; final only
-    /// once `pd` has been online. `None` without the `trs` feature.
+    /// once `pd` has been online. `None` when LibOSDP refuses the query.
     pub fn max_apdu_len(&self, pd: PdIndex) -> Option<usize> {
         let len = unsafe { libosdp_sys::osdp_cp_trs_get_max_apdu_len(self.ctx, pd.as_c()) };
         usize::try_from(len).ok()

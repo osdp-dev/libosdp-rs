@@ -1003,13 +1003,18 @@ fn disabled_pd_goes_offline_until_enabled() -> Result<()> {
 }
 
 #[test]
-fn disabling_fails_the_command_in_flight_and_keeps_the_queue() -> Result<()> {
+fn disabling_finishes_the_exchange_and_keeps_the_queue() -> Result<()> {
     let (cp, target, pd) = secure_pair()?;
-    let in_flight = cp.submit(target, buzz())?;
+    pd.set_command_handler(|_, _: &mut Responder<'_>| Ok(()));
+    // Once online the CP sends its own osdp_ACURXSIZE first; see one app
+    // command through so that the next one is the exchange under way.
+    let settle = cp.submit(target, buzz())?;
+    assert_eq!(refresh_until_done(&cp, &pd, &settle), Ok(()));
+    let exchanged = cp.submit(target, buzz())?;
     let queued = cp.submit(target, buzz())?;
     cp.disable(target)?;
     refresh_until(&cp, &pd, || !cp.is_enabled(target));
-    assert_eq!(in_flight.status(), Some(Err(CompletionError::Failed)));
+    assert_eq!(exchanged.status(), Some(Ok(())));
     assert_eq!(queued.status(), None);
     assert_eq!(cp.flush(target), 1);
     assert_eq!(queued.status(), Some(Err(CompletionError::Flushed)));
@@ -1174,18 +1179,6 @@ fn refresh_until_done_with(
     }
 }
 
-#[cfg(not(feature = "trs"))]
-#[test]
-fn transparent_reader_commands_need_the_trs_feature() -> Result<()> {
-    let (cp, target, _pd) = smart_card_pair()?;
-    assert!(matches!(
-        cp.submit(target, Command::Trs(TrsCommand::Start)),
-        Err(Error::Rejected)
-    ));
-    Ok(())
-}
-
-#[cfg(feature = "trs")]
 #[test]
 fn card_session_carries_apdus_to_the_card() -> Result<()> {
     use libosdp::{CardData, TrsReply, TrsSessionStatus};
@@ -1224,21 +1217,13 @@ fn card_session_carries_apdus_to_the_card() -> Result<()> {
 }
 
 #[test]
-fn presence_scan_runs_only_with_the_trs_feature() -> Result<()> {
+fn presence_scan_starts_and_stops() -> Result<()> {
     let (cp, target, _pd) = smart_card_pair()?;
     let enabled = cp.trs_scan_enable(target, TrsScan::default());
     let disabled = cp.trs_scan_disable(target);
-    if cfg!(feature = "trs") {
-        assert_eq!((enabled, disabled), (Ok(()), Ok(())));
-        let max = cp.max_apdu_len(target).unwrap();
-        assert!(max > 0 && max < 258);
-    } else {
-        assert_eq!(
-            (enabled, disabled),
-            (Err(Error::Rejected), Err(Error::Rejected))
-        );
-        assert_eq!(cp.max_apdu_len(target), None);
-    }
+    assert_eq!((enabled, disabled), (Ok(()), Ok(())));
+    let max = cp.max_apdu_len(target).unwrap();
+    assert!(max > 0 && max < 258);
     Ok(())
 }
 

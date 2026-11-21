@@ -912,8 +912,7 @@ pub enum Command {
     /// [`ControlPanel::challenge_auth`](crate::ControlPanel::challenge_auth)
     CrAuth(Challenge),
 
-    /// Talk to the smart card in the PD's reader through a card session;
-    /// needs the `trs` feature
+    /// Talk to the smart card in the PD's reader through a card session
     Trs(TrsCommand),
 }
 
