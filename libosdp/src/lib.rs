@@ -94,6 +94,8 @@ mod error;
 mod events;
 mod ffi;
 mod file;
+#[cfg(any(target_os = "none", test))]
+mod heap;
 mod metrics;
 mod notification;
 mod pd;

@@ -151,6 +151,8 @@ Release subject ## TODO
 - pd: Responder::reply refuses a status with the wrong number of entries
   for the PD's capabilities with Error::Rejected, rather than LibOSDP
   silently answering the CP with a NAK
+- no_std: Serve LibOSDP's heap from the global allocator on bare-metal
+  targets, so C and Rust share one heap and no libc allocator is linked
 
 ## Fixes
 
