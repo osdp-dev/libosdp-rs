@@ -43,6 +43,13 @@ pub enum Error {
     /// The channel failed.
     #[cfg_attr(feature = "std", error("channel error: {0:?}"))]
     Channel(ChannelError),
+
+    /// A bare-metal context was set up before a
+    /// [`Platform`](crate::Platform) was registered with
+    /// [`set_platform`](crate::set_platform).
+    #[cfg(any(target_os = "none", doc))]
+    #[cfg_attr(feature = "std", error("no Platform registered"))]
+    NoPlatform,
 }
 
 impl From<ChannelError> for Error {

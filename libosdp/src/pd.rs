@@ -163,6 +163,8 @@ impl PeripheralDevice {
     /// [`file_ops`](PdInfoBuilder::file_ops), if any, receive the files the
     /// CP sends.
     pub fn new(mut info: PdInfoBuilder, channel: Box<dyn Channel>) -> Result<Self> {
+        #[cfg(target_os = "none")]
+        crate::platform::require_platform()?;
         unsafe { libosdp_sys::osdp_set_log_callback(Some(pd_log_handler)) };
         let file_ops = info.take_file_ops();
         let channel = OwnedChannel::new(channel);

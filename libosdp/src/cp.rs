@@ -111,6 +111,8 @@ impl ControlPanelBuilder {
 
     /// Build the [`ControlPanel`] instance.
     pub fn build(self) -> Result<ControlPanel> {
+        #[cfg(target_os = "none")]
+        crate::platform::require_platform()?;
         let mut file_ops = Vec::new();
         let info: Vec<crate::PdInfoHandle> = self
             .pd_info

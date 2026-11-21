@@ -153,6 +153,9 @@ Release subject ## TODO
   silently answering the CP with a NAK
 - no_std: Serve LibOSDP's heap from the global allocator on bare-metal
   targets, so C and Rust share one heap and no libc allocator is linked
+- no_std: Give LibOSDP its clock and entropy on bare metal through a
+  Platform registered with set_platform; a context set up before one is
+  fails with Error::NoPlatform instead of a link error
 
 ## Fixes
 

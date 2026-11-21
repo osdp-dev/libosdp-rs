@@ -103,6 +103,8 @@ mod pdcap;
 mod pdid;
 mod pdinfo;
 mod piv;
+#[cfg(any(target_os = "none", doc))]
+mod platform;
 mod queue;
 mod status;
 #[cfg(feature = "async")]
@@ -120,6 +122,8 @@ pub use file::{FileOps, FileProgress, Finalize, OpenMode};
 pub use pdcap::{CapFunction, Capability};
 pub use pdid::*;
 pub use pdinfo::*;
+#[cfg(any(target_os = "none", doc))]
+pub use platform::{set_platform, Platform};
 #[cfg(feature = "async")]
 pub use stream::{EventStream, NotificationStream};
 
