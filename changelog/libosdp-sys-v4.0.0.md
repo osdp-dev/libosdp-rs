@@ -11,6 +11,8 @@ Release subject ## TODO
 - ## TODO
 - build: Build LibOSDP's Transparent Reader Support, which LibOSDP now
   builds unconditionally
+- build: Build bare-metal targets with LibOSDP's minimal logger, which
+  hands messages to the log callback without going through stdio
 
 ## Fixes
 

@@ -130,9 +130,16 @@ fn main() -> Result<()> {
     }
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    if target_os.is_empty() || target_os == "none" {
+    let bare_metal = target_os.is_empty() || target_os == "none";
+    if bare_metal {
         println!("cargo:warning=Building for bare metal target");
-        build = build.define("__BARE_METAL__", "1")
+        // The minimal logger hands each message straight to the log
+        // callback the Rust side installs; the full one (utils' logger.c)
+        // writes to stderr through stdio, which on bare metal links in
+        // newlib's FILE layer, its heap and syscall stubs.
+        build = build
+            .define("__BARE_METAL__", "1")
+            .define("OPT_OSDP_LOG_MINIMAL", "1")
     } else if target_os == "espidf" {
         // ESP-IDF provides a POSIX-compatible environment (sys/time.h,
         // gettimeofday, etc.).  The libosdp C code's __linux__ code path
@@ -144,13 +151,12 @@ fn main() -> Result<()> {
         build = build.warnings_into_errors(false);
     }
 
-    let source_files = vec![
+    let mut source_files = vec![
         "vendor/utils/src/crc16.c",
         "vendor/utils/src/list.c",
         "vendor/utils/src/queue.c",
         "vendor/utils/src/slab.c",
         "vendor/utils/src/utils.c",
-        "vendor/utils/src/logger.c",
         "vendor/utils/src/disjoint_set.c",
         "vendor/src/osdp_common.c",
         "vendor/src/osdp_phy.c",
@@ -166,6 +172,9 @@ fn main() -> Result<()> {
         "vendor/src/crypto/tinyaes_src.c",
         "vendor/src/crypto/tinyaes.c",
     ];
+    if !bare_metal {
+        source_files.push("vendor/utils/src/logger.c");
+    }
 
     for file in source_files {
         build = build.file(file);
