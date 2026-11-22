@@ -50,6 +50,31 @@ jobs:
       - name: Cargo check no-std with async
         run: cargo check --package libosdp --target thumbv6m-none-eabi --no-default-features --features async
 
+  bare-metal:
+    name: Link and run the no_std example under QEMU
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Setup rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        with:
+          toolchain: stable
+          target: thumbv6m-none-eabi, thumbv7em-none-eabihf
+      - name: Install the Arm toolchain, newlib and QEMU
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          gcc-arm-none-eabi libnewlib-arm-none-eabi qemu-system-arm
+      - name: Check what libosdp.a asks a no_std link for
+        run: |
+          scripts/check-bare-metal-symbols.sh thumbv6m-none-eabi
+          scripts/check-bare-metal-symbols.sh thumbv7em-none-eabihf
+      - name: Run the no_std example
+        working-directory: libosdp/examples/no_std
+        run: timeout 300 cargo run --release
+
   bindings-check:
     name: Regenerate bindings and check on ${{ matrix.target }}
     runs-on: ubuntu-latest

@@ -1,0 +1,6 @@
+/* ARM MPS2-AN386 (Cortex-M4), as emulated by QEMU */
+MEMORY
+{
+  FLASH : ORIGIN = 0x00000000, LENGTH = 4M
+  RAM   : ORIGIN = 0x20000000, LENGTH = 4M
+}

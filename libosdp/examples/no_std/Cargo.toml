@@ -1,0 +1,27 @@
+[package]
+name = "libosdp-no-std-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone crate: it only builds for a bare-metal target, so it stays out of
+# the host workspace.
+[workspace]
+
+[dependencies]
+libosdp = { path = "../..", default-features = false }
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7.5"
+cortex-m-semihosting = "0.5.0"
+critical-section = "1.2.0"
+embedded-alloc = "0.6.0"
+
+[patch.crates-io]
+libosdp-sys = { path = "../../../libosdp-sys" }
+
+[profile.dev]
+opt-level = "s"
+
+[profile.release]
+debug = true
+lto = true
