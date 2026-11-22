@@ -32,7 +32,7 @@ jobs:
         with:
           submodules: recursive
       - name: Setup rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@v2.0.0
         with:
           toolchain: stable
           components: rustfmt, clippy
@@ -91,7 +91,7 @@ jobs:
         with:
           submodules: recursive
       - name: Setup rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@v2.0.0
         with:
           toolchain: stable
           target: ${{ matrix.target }}
@@ -108,7 +108,7 @@ jobs:
         with:
           submodules: recursive
       - name: Setup rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@v2.0.0
         with:
           toolchain: stable
       - name: Cargo test
@@ -131,7 +131,7 @@ jobs:
         with:
           submodules: recursive
       - name: Setup rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@v2.0.0
         with:
           toolchain: stable
       - name: Install valgrind
