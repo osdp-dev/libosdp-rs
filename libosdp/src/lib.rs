@@ -54,11 +54,30 @@
 //! You can find a template implementation for CP app [here][3] and PD app [here][4].
 //! With the `async` feature, see [async_cp.rs][7] and [async_pd.rs][8].
 //!
+//! ## Bare metal
+//!
+//! Without the `std` feature the crate is `no_std` and needs `alloc`. On a
+//! bare-metal target (`target_os = "none"`) the LibOSDP C library underneath
+//! also needs, at link time:
+//!
+//!   - a global allocator, which this crate serves LibOSDP's heap from;
+//!   - a [`Platform`], registered with [`set_platform`] before the first
+//!     context is set up: a millisecond clock, and a random source that
+//!     secure channel challenges come from and should be a hardware TRNG;
+//!   - `snprintf` and `vsnprintf`, with which LibOSDP formats its log
+//!     messages. newlib-nano from the Arm GNU toolchain supplies both, but
+//!     links in `malloc` behind them; an `_sbrk` that refuses every request
+//!     satisfies it without starting a second heap.
+//!
+//! Compiling LibOSDP needs a C cross compiler for the target, such as
+//! `arm-none-eabi-gcc`. The [no_std example][9] runs a CP and a PD on a
+//! Cortex-M4 under QEMU and shows each of these.
+//!
 //! ## Cargo features
 //!
 //!   - `std` (default): build against the standard library, implement
-//!     `std::error::Error` for the error types, and turn on `log`. Without
-//!     it the crate is `no_std` and needs only `alloc`.
+//!     `std::error::Error` for the error types, and turn on `log`. See
+//!     [Bare metal](#bare-metal) for building without it.
 //!   - `log`: forward LibOSDP's log messages to the `log` crate.
 //!   - `defmt`: forward LibOSDP's log messages to `defmt` instead, and
 //!     derive `defmt::Format` for most public types.
@@ -78,6 +97,7 @@
 //! [6]: https://doc.osdp.dev/libosdp/secure-channel
 //! [7]: https://docs.rs/crate/libosdp/latest/source/examples/async_cp.rs
 //! [8]: https://docs.rs/crate/libosdp/latest/source/examples/async_pd.rs
+//! [9]: https://github.com/osdp-dev/libosdp-rs/tree/master/libosdp/examples/no_std
 
 #![warn(missing_debug_implementations)]
 #![warn(rust_2018_idioms)]
